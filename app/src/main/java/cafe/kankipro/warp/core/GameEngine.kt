@@ -186,7 +186,8 @@ object GameEngine {
                     Engine.note("game: $ep did not pass the tunnel test")
                     runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
                 }
-                val out = egress ?: error("هیچ‌کدام از ${tries.size} دروازه از داخل تونل جواب نداد؛ دوباره «اسکن» بزن")
+                val out0 = egress ?: error("هیچ‌کدام از ${tries.size} دروازه از داخل تونل جواب نداد؛ دوباره «اسکن» بزن")
+                val out = out0.copy(pingMs = Probe.dnsPing() ?: out0.pingMs)
                 // The one that worked goes to the top of this network's list.
                 hits.firstOrNull { it.endpoint == used }?.let { pick(ctx, it) }
                 val ep = used
@@ -199,18 +200,42 @@ object GameEngine {
             } catch (e: Exception) {
                 runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
                 Engine.note("game: ${e.message}")
-                Engine.update { it.copy(phase = Phase.ERROR, proven = 0, error = e.message ?: "وصل نشد", message = "", gamer = true) }
+                Engine.update { it.copy(phase = Phase.ERROR, proven = 0, error = e.message ?: reason(e), message = "", gamer = true) }
             }
         }
     }
 
-    /** Some library builds reject I1..I5; then the same config goes without them (junk packets stay). */
+    /**
+     * Starts the engine with [text], and if the engine refuses it, again with less: first without the
+     * I1..I3 signature packets (the part an engine build is most likely to refuse), then with no
+     * disguise at all. Each refusal is written to the log with the engine's own reason, so a
+     * «وصل نشد» never comes without one.
+     */
     private fun up(ctx: Context, text: String) {
-        val config = runCatching { Config.parse(text.byteInputStream()) }.getOrElse {
-            Engine.note("game: config without I1..I5 (${it.message})")
-            Config.parse(text.lines().filterNot { l -> l.trim().matches(Regex("I[1-5]\\s*=.*")) }.joinToString("\n").byteInputStream())
+        val noI = text.lines().filterNot { it.trim().matches(Regex("I[1-5]\\s*=.*")) }.joinToString("\n")
+        val plain = noI.lines().filterNot { it.trim().matches(Regex("J(c|min|max)\\s*=.*")) }.joinToString("\n")
+        val tries = listOf("full" to text, "without I1..I3" to noI, "plain WireGuard" to plain).distinctBy { it.second }
+        var last: Exception? = null
+        for ((name, cfg) in tries) {
+            try {
+                val config = Config.parse(cfg.byteInputStream())
+                backend(ctx).setState(tunnel, Tunnel.State.UP, config)
+                if (name != "full") Engine.note("game: the engine took the config $name")
+                return
+            } catch (e: Exception) {
+                last = e
+                Engine.note("game: the engine refused the config ($name): ${reason(e)}")
+                runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
+            }
         }
-        backend(ctx).setState(tunnel, Tunnel.State.UP, config)
+        throw IllegalStateException("موتور بازی روشن نشد: ${reason(last)}")
+    }
+
+    /** The engine's exceptions often carry no message, only a reason code: say that instead. */
+    private fun reason(e: Throwable?): String {
+        if (e == null) return "?"
+        val code = runCatching { e.javaClass.getMethod("getReason").invoke(e)?.toString() }.getOrNull()
+        return listOfNotNull(e.message?.takeIf { it.isNotBlank() }, code, e.javaClass.simpleName).first()
     }
 
     private suspend fun watch(ctx: Context) {
@@ -229,7 +254,13 @@ object GameEngine {
                 Engine.update { it.copy(phase = Phase.ERROR, proven = 0, error = "موتور بازی متوقف شد") }
                 return
             }
-            if (tick > 0 && tick % 30 == 0) Probe.direct(4000)?.let { e -> Engine.update { it.copy(egress = e) } }
+            // the ping every 5 s (one small DNS packet), where the traffic comes out every 60 s
+            if (tick > 0 && tick % 5 == 0) Probe.dnsPing()?.let { ms ->
+                Engine.update { s -> s.copy(egress = s.egress?.copy(pingMs = ms)) }
+            }
+            if (tick > 0 && tick % 60 == 0) Probe.direct(4000)?.let { e ->
+                Engine.update { it.copy(egress = e.copy(pingMs = it.egress?.pingMs ?: e.pingMs)) }
+            }
             tick++
             delay(1000)
         }

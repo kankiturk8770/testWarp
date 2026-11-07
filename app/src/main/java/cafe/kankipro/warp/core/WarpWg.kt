@@ -30,9 +30,8 @@ data class WarpWg(
     }
 
     /**
-     * An AmneziaWG config for [endpoint]. [disguise] adds the Amnezia packets Cloudflare's plain
-     * server drops unread (junk before the handshake and the I1..I3 signature packets); the size
-     * fields S1..S4 stay 0, those a plain server cannot read.
+     * An AmneziaWG config for [endpoint]. [disguise] adds the Amnezia junk packets Cloudflare's plain
+     * server drops unread; the size fields S1..S4 stay 0, those a plain server cannot read.
      */
     fun config(endpoint: String, disguise: Boolean, mtu: Int = 1280): String = buildString {
         appendLine("[Interface]")
@@ -42,13 +41,12 @@ data class WarpWg(
         appendLine("DNS = 1.1.1.1, 1.0.0.1")
         appendLine("MTU = $mtu")
         if (disguise) {
+            // Junk packets before the handshake only. The I1..I5 signature packets made the engine
+            // (amneziawg-go inside the app) crash the whole app on a phone in 0.4.0, a crash no
+            // try/catch can stop; Jc/Jmin/Jmax have been in every AmneziaWG version.
             appendLine("Jc = 4")
             appendLine("Jmin = 40")
             appendLine("Jmax = 70")
-            // a QUIC-looking first packet, then random ones: what a DPI box sees before the handshake
-            appendLine("I1 = <b 0xc70000000108><r 32><t><r 64>")
-            appendLine("I2 = <r 48>")
-            appendLine("I3 = <t><r 32>")
         }
         appendLine()
         appendLine("[Peer]")

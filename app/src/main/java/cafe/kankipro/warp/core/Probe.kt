@@ -100,6 +100,37 @@ object Probe {
         null
     }
 
+    /**
+     * The ping as a game feels it: one small DNS question to 1.1.1.1 over UDP, through the tunnel
+     * the app itself is in (gamer mode), one round trip with no TCP or TLS on top. The best of three.
+     */
+    fun dnsPing(tries: Int = 3, timeoutMs: Int = 1500): Long? {
+        var best: Long? = null
+        repeat(tries) { n ->
+            runCatching {
+                java.net.DatagramSocket().use { s ->
+                    s.soTimeout = timeoutMs
+                    val id = (0x1000 + n * 7919) and 0xffff
+                    // header: id, flags 0x0100 (recursion desired), 1 question; then «cloudflare.com» A IN
+                    val q = byteArrayOf((id shr 8).toByte(), id.toByte(), 1, 0, 0, 1, 0, 0, 0, 0, 0, 0) +
+                        byteArrayOf(10) + "cloudflare".toByteArray() + byteArrayOf(3) + "com".toByteArray() +
+                        byteArrayOf(0, 0, 1, 0, 1)
+                    val to = java.net.InetSocketAddress("1.1.1.1", 53)
+                    val t0 = System.nanoTime()
+                    s.send(java.net.DatagramPacket(q, q.size, to))
+                    val buf = ByteArray(512)
+                    val p = java.net.DatagramPacket(buf, buf.size)
+                    s.receive(p)
+                    if (p.length >= 2 && buf[0] == q[0] && buf[1] == q[1]) {
+                        val ms = (System.nanoTime() - t0) / 1_000_000
+                        best = minOf(best ?: ms, ms)
+                    }
+                }
+            }
+        }
+        return best
+    }
+
     /** `key=value` lines of /cdn-cgi/trace; null without an `ip`. */
     fun parseTrace(body: String): Egress? {
         val map = body.lineSequence()
