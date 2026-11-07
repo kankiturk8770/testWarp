@@ -29,7 +29,7 @@ enum class IpFamily(val title: String, val value: String) {
 
 data class Options(
     val transport: Transport = Transport.MASQUE_H2,
-    val scan: Scan = Scan.BALANCED,
+    val scan: Scan = Scan.TURBO,
     val ip: IpFamily = IpFamily.V4,
     val fragment: Boolean = true,
     val autoFallback: Boolean = true,
@@ -45,6 +45,8 @@ data class Options(
         add("--scan"); add(scan.value)
         add("--ip"); add(ip.value)
         if (fragment) add("--fragment")
+        // Reuse the gateway that worked last time without rescanning, when it still answers.
+        add("--quick-reconnect")
     }
 
     fun toJson(): String = JSONObject()
@@ -62,7 +64,7 @@ data class Options(
                 val j = JSONObject(raw)
                 Options(
                     transport = Transport.of(j.optString("transport")) ?: Transport.MASQUE_H2,
-                    scan = Scan.entries.firstOrNull { it.name == j.optString("scan") } ?: Scan.BALANCED,
+                    scan = Scan.entries.firstOrNull { it.name == j.optString("scan") } ?: Scan.TURBO,
                     ip = IpFamily.entries.firstOrNull { it.name == j.optString("ip") } ?: IpFamily.V4,
                     fragment = j.optBoolean("fragment", true),
                     autoFallback = j.optBoolean("autoFallback", true),

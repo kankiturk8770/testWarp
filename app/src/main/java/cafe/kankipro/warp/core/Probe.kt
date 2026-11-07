@@ -24,7 +24,11 @@ object Probe {
         val pingMs: Long = 0,
     )
 
-    private val HOSTS = listOf("cloudflare.com", "one.one.one.one", "www.cloudflare.com")
+    /**
+     * 1.1.1.1 first: an address needs no DNS lookup inside the tunnel, so the answer comes one
+     * round trip sooner (its certificate names the address). The names are the fallback.
+     */
+    private val HOSTS = listOf("1.1.1.1", "cloudflare.com")
 
     fun trace(port: Int, timeoutMs: Int = 6000): Egress? {
         for (host in HOSTS) {
@@ -97,9 +101,14 @@ object Probe {
         out.write(byteArrayOf(5, 1, 0)); out.flush()
         val hello = readN(inp, 2)
         require(hello[0].toInt() == 5 && hello[1].toInt() == 0) { "socks5: no-auth refused" }
-        val name = host.toByteArray()
-        val req = byteArrayOf(5, 1, 0, 3, name.size.toByte()) + name +
-            byteArrayOf((port shr 8).toByte(), port.toByte())
+        val v4 = host.split('.').takeIf { p -> p.size == 4 && p.all { it.toIntOrNull() in 0..255 } }
+        val addr = if (v4 != null) {
+            byteArrayOf(1) + v4.map { it.toInt().toByte() }.toByteArray()
+        } else {
+            val name = host.toByteArray()
+            byteArrayOf(3, name.size.toByte()) + name
+        }
+        val req = byteArrayOf(5, 1, 0) + addr + byteArrayOf((port shr 8).toByte(), port.toByte())
         out.write(req); out.flush()
         val head = readN(inp, 4)
         require(head[1].toInt() == 0) { "socks5: connect refused (${head[1]})" }

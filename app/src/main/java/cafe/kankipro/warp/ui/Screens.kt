@@ -287,18 +287,24 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
             style = T.small, color = K.rose,
         )
         Spacer(Modifier.height(8.dp))
+        val account by Engine.account.collectAsState()
+        val busy = account?.startsWith("در حال") == true
         Box(
-            Modifier.clip(RoundedCornerShape(14.dp)).border(1.dp, K.ember, RoundedCornerShape(14.dp))
-                .clickable(enabled = !locked) { confirm = true }.heightIn(min = 44.dp)
+            Modifier.clip(RoundedCornerShape(14.dp)).border(1.dp, if (busy) K.wineLine else K.ember, RoundedCornerShape(14.dp))
+                .clickable(enabled = !locked && !busy) { confirm = true }.heightIn(min = 44.dp)
                 .padding(horizontal = 16.dp, vertical = 10.dp)
-        ) { Text("ساختن اکانت تازه", style = T.strong, color = K.ember) }
+        ) { Text(if (busy) "در حال ساخت…" else "ساختن اکانت تازه", style = T.strong, color = if (busy) K.rose else K.ember) }
+        account?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, style = T.body, color = if (it.startsWith("ساخته نشد")) K.ember else K.gold)
+        }
     }
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
             containerColor = K.wine,
             title = { Text("اکانت تازه بسازم؟", style = T.strong, color = K.champagne) },
-            text = { Text("اکانت فعلی از این گوشی پاک می‌شود و اتصال بعدی یک اکانت تازه در کلادفلر می‌سازد.", style = T.body, color = K.rose) },
+            text = { Text("اکانت فعلی از این گوشی پاک می‌شود و همین الان یک اکانت تازه در کلادفلر ساخته می‌شود (برای پروتکلی که انتخاب کردی).", style = T.body, color = K.rose) },
             confirmButton = { TextButton({ confirm = false; onForget() }) { Text("پاک کن", style = T.strong, color = K.ember) } },
             dismissButton = { TextButton({ confirm = false }) { Text("نه", style = T.strong, color = K.champagne) } },
         )

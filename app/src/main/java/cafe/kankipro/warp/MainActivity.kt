@@ -16,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import cafe.kankipro.warp.core.Engine
 import cafe.kankipro.warp.core.Phase
 import cafe.kankipro.warp.core.Prefs
@@ -42,7 +44,9 @@ class MainActivity : ComponentActivity() {
                         options = options,
                         onOptions = { options = it; Prefs.save(this@MainActivity, it) },
                         onToggle = { toggle() },
-                        onForget = { Engine.forgetIdentity(this@MainActivity); Engine.note("WARP identity deleted") },
+                        onForget = {
+                            lifecycleScope.launch { Engine.remakeAccount(applicationContext, options.transport) }
+                        },
                     )
                 }
             }

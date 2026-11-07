@@ -66,16 +66,30 @@ class WarpService : VpnService() {
         Engine.update { it.copy(phase = Phase.CONNECTING, proven = 0, error = null, egress = null,
             gateway = "", message = "آماده کردن تونل گوشی…") }
         try {
-            val firstRun = !Engine.hasIdentity(this)
             val fd = openTun(options)
             val chain = Options.chain(options, Prefs.lastGood(this))
             Engine.note("chain: " + chain.joinToString(" → ") { it.transport.title })
             var hevStarted = false
+            var lastError: String? = null
             for ((i, c) in chain.withIndex()) {
                 if (!alive()) return
                 Engine.update { it.copy(transport = c.transport, attempt = i + 1, attempts = chain.size,
                     proven = 0, gateway = "", message = "روشن کردن هسته با ${c.transport.title}…") }
                 Engine.note("try ${i + 1}/${chain.size}: ${c.transport.title}")
+
+                // The account first, on its own and with all the time it needs (once per transport family).
+                if (!Engine.hasIdentity(this, c.transport)) {
+                    Engine.update { it.copy(message = "ساخت اکانت رایگان WARP در کلادفلر… (فقط بار اول، تا چند دقیقه)") }
+                    val err = Engine.register(this, c.transport)
+                    if (!alive()) return
+                    if (err != null) {
+                        Engine.note("${c.transport.title}: account: $err")
+                        lastError = "اکانت WARP ساخته نشد: $err"
+                        continue
+                    }
+                    Engine.note("${c.transport.title}: account ready")
+                }
+
                 val listening = try {
                     Engine.startCore(this, c)
                     Engine.awaitSocks(c.port, CORE_LISTEN_MS)
@@ -83,6 +97,7 @@ class WarpService : VpnService() {
                     throw e
                 } catch (e: Exception) {
                     Engine.note("${c.transport.title}: ${e.message}")
+                    lastError = e.message
                     false
                 }
                 if (!listening) continue
@@ -103,16 +118,12 @@ class WarpService : VpnService() {
                 Engine.update { it.copy(proven = if (it.gateway.isNotBlank()) 3 else 2,
                     message = if (it.gateway.isNotBlank()) "فرستادن یک درخواست واقعی از داخل تونل…" else "پیدا کردن دروازه‌ی کلادفلر…") }
 
-                // The first run also registers a WARP account and scans for a gateway.
-                val budget = when {
-                    i == 0 && firstRun -> FIRST_RUN_PROBE_MS
-                    i == 0 -> FIRST_PROBE_MS
-                    else -> NEXT_PROBE_MS
-                }
-                val egress = Engine.awaitInternet(c.port, budget) { n ->
+                val budget = if (i == 0) FIRST_PROBE_MS else NEXT_PROBE_MS
+                val check = Engine.awaitInternet(c.port, budget) { n ->
                     if (n > 1) Engine.update { s -> s.copy(message = "آزمایش تونل، بار $n…") }
                 }
                 if (!alive()) return
+                val egress = check.egress
                 if (egress != null) {
                     Prefs.rememberGood(this, c.transport)
                     Engine.note("verified via ${c.transport.title}: ${egress.ip} ${egress.colo} warp=${egress.warp}")
@@ -122,9 +133,10 @@ class WarpService : VpnService() {
                     startWatch(mine, c)
                     return
                 }
-                Engine.note("${c.transport.title}: nothing came back through the tunnel")
+                lastError = check.error ?: "از داخل تونل جوابی نیامد"
+                Engine.note("${c.transport.title}: $lastError")
             }
-            error("هیچ‌کدام از پروتکل‌ها جواب نداد. گزارش را ببین یا پروتکل دیگری امتحان کن.")
+            error(lastError?.let { "وصل نشد: $it" } ?: "هیچ‌کدام از پروتکل‌ها جواب نداد. گزارش را ببین یا پروتکل دیگری امتحان کن.")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -174,10 +186,15 @@ class WarpService : VpnService() {
         }
     }
 
-    /** Takes everything down; with [error] the screen keeps the reason. */
+    /**
+     * Takes everything down; with [error] the screen keeps the reason. The phone's traffic is
+     * released first (tun2socks, then the TUN) and the screen says «وصل نیستی» right then; the
+     * core winds down after that in the background (a new connect waits for it in startCore).
+     */
     fun shutdown(error: String?) {
         session.incrementAndGet()
-        Engine.update { it.copy(phase = if (error != null) Phase.ERROR else Phase.STOPPING, error = error, message = "") }
+        Engine.update { it.copy(phase = if (error != null) Phase.ERROR else Phase.STOPPING, proven = 0,
+            error = error, message = "") }
         error?.let { Engine.note("error: $it") }
         watch?.cancel()
         val w = worker
@@ -187,10 +204,10 @@ class WarpService : VpnService() {
             Engine.stopHev()
             runCatching { tun?.close() }
             tun = null
-            Engine.stopCore()
-            Engine.pumpLog()
             if (error == null) Engine.update { cafe.kankipro.warp.core.ConnState() }
             stopForeground(STOP_FOREGROUND_REMOVE)
+            Engine.stopCore()
+            Engine.pumpLog()
             stopSelf()
         }
     }
@@ -229,9 +246,9 @@ class WarpService : VpnService() {
     companion object {
         private const val CHANNEL = "conn"
         private const val CORE_LISTEN_MS = 15_000L
-        private const val FIRST_RUN_PROBE_MS = 75_000L
-        private const val FIRST_PROBE_MS = 40_000L
-        private const val NEXT_PROBE_MS = 25_000L
+        // The account is made before these start; they cover the gateway search and the tunnel.
+        private const val FIRST_PROBE_MS = 60_000L
+        private const val NEXT_PROBE_MS = 35_000L
         const val ACTION_START = "cafe.kankipro.warp.START"
         const val ACTION_STOP = "cafe.kankipro.warp.STOP"
 
