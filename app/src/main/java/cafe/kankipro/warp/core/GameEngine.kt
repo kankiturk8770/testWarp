@@ -158,27 +158,40 @@ object GameEngine {
                 val id = WarpWg.load(ctx) ?: error(err ?: "اکانت WireGuard ساخته نشد")
                 Engine.update { it.copy(proven = 1, message = "انتخاب بهترین دروازه برای بازی…") }
                 val net = networkKey(ctx)
-                val ep = endpoint ?: Prefs.gameHits(ctx, net).firstOrNull()?.endpoint ?: run {
-                    Engine.update { it.copy(message = "اسکن کوتاه دروازه‌ها…") }
-                    val hits = WgScan.scan(id, transport == Transport.AMNEZIA, wide = 120, keep = 4, samples = 4)
+                var hits = Prefs.gameHits(ctx, net)
+                if (endpoint == null && hits.isEmpty()) {
+                    Engine.update { it.copy(message = "اسکن دروازه‌ها برای بازی…") }
+                    hits = WgScan.scan(id, transport == Transport.AMNEZIA, wide = 300, keep = 6, samples = 5)
                     if (hits.isNotEmpty()) Prefs.saveGameHits(ctx, net, hits.take(6))
-                    hits.firstOrNull()?.endpoint ?: error("هیچ دروازه‌ای جواب نداد؛ «اسکن» را بزن")
                 }
-                Engine.update { it.copy(gateway = ep, message = "روشن کردن موتور بازی…") }
-                up(ctx, id.config(ep, transport == Transport.AMNEZIA))
-                Engine.update { it.copy(proven = 2, message = "دست دادن با کلادفلر…") }
-
-                // Proven gateway = data came back from it; proven internet = a real request answered.
-                val deadline = SystemClock.elapsedRealtime() + 25_000
+                // The chosen one first, then the next best of this network's list: if one fails the
+                // tunnel test, the next is tried at once (up to four), no tap needed.
+                val tries = (listOfNotNull(endpoint) + hits.map { it.endpoint }).distinct().take(4)
+                if (tries.isEmpty()) error("هیچ دروازه‌ای از این شبکه جواب نداد؛ «اسکن» را بزن")
                 var egress: Probe.Egress? = null
-                while (SystemClock.elapsedRealtime() < deadline && egress == null) {
-                    if (rx(ctx) > 0) Engine.update { if (it.proven < 3) it.copy(proven = 3) else it }
-                    egress = Probe.direct(4000)
-                    if (egress == null) delay(500)
+                var used = ""
+                for ((n, ep) in tries.withIndex()) {
+                    Engine.update { it.copy(gateway = ep, proven = 1, attempt = n + 1, attempts = tries.size,
+                        message = if (n == 0) "روشن کردن موتور بازی…" else "دروازه‌ی قبلی رد شد؛ امتحان $ep…") }
+                    up(ctx, id.config(ep, transport == Transport.AMNEZIA))
+                    Engine.update { it.copy(proven = 2, message = "دست دادن با کلادفلر…") }
+                    // Gateway proven = data came back from it; internet proven = a real request answered.
+                    val deadline = SystemClock.elapsedRealtime() + 9_000
+                    while (SystemClock.elapsedRealtime() < deadline && egress == null) {
+                        if (rx(ctx) > 0) Engine.update { if (it.proven < 3) it.copy(proven = 3) else it }
+                        egress = Probe.direct(2500)
+                        if (egress == null) delay(300)
+                    }
+                    if (egress != null) { used = ep; break }
+                    Engine.note("game: $ep did not pass the tunnel test")
+                    runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
                 }
-                if (egress == null) error("از داخل تونل جوابی نیامد؛ دروازه‌ی دیگری را امتحان کن")
-                Engine.note("game: verified via ${transport.title} $ep: ${egress.ip} ${egress.colo}")
-                Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "", egress = egress,
+                val out = egress ?: error("هیچ‌کدام از ${tries.size} دروازه از داخل تونل جواب نداد؛ دوباره «اسکن» بزن")
+                // The one that worked goes to the top of this network's list.
+                hits.firstOrNull { it.endpoint == used }?.let { pick(ctx, it) }
+                val ep = used
+                Engine.note("game: verified via ${transport.title} $ep: ${out.ip} ${out.colo}")
+                Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "", egress = out,
                     startedAt = SystemClock.elapsedRealtime()) }
                 watch(ctx)
             } catch (e: kotlinx.coroutines.CancellationException) {

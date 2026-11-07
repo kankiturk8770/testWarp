@@ -66,6 +66,20 @@ class ShotsTest {
             startedAt = 0),
     )
 
+    @Test fun gamerRunning() = shot(
+        "3b-gamer-running",
+        ConnState(phase = Phase.RUNNING, proven = 4, transport = Transport.AMNEZIA, gamer = true,
+            egress = Probe.Egress("104.28.212.71", "IST", "TR", "on", 46), gateway = "188.114.97.3:4500", startedAt = 0),
+        options = Options(gamer = true),
+    )
+
+    @Test fun pinned() = shot(
+        "2b-pinned",
+        ConnState(),
+        options = Options(transport = Transport.WIREGUARD, pins = mapOf(Transport.WIREGUARD to "188.114.99.172:5956"),
+            pinPing = mapOf(Transport.WIREGUARD to 111)),
+    )
+
     @Test fun failed() = shot(
         "4-error",
         ConnState(phase = Phase.ERROR, proven = 1, error = "هیچ‌کدام از پروتکل‌ها جواب نداد. گزارش را ببین یا پروتکل دیگری امتحان کن."),

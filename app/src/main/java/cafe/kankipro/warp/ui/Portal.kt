@@ -1,6 +1,5 @@
 package cafe.kankipro.warp.ui
 
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -23,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
@@ -36,23 +36,24 @@ import cafe.kankipro.warp.core.Phase
 import cafe.kankipro.warp.core.Stage
 
 /**
- * The connect button seen as a warp tunnel head-on. The disc is the phone; each ring around it
- * is one stage on the way out (core, phone tunnel, Cloudflare gateway, internet), innermost first.
- * A ring turns gold only when its stage is proven; the one being worked on turns while it waits.
+ * The connect button seen as a warp tunnel head-on. The disc is the phone; each ring around it is
+ * one stage on the way out (core, phone tunnel, Cloudflare gateway, internet), innermost first.
+ *
+ * Light on purpose: no rotation and no per-frame geometry. Idle, the rings breathe (only their
+ * alpha changes, slowly); connecting, a ring turns gold the moment its stage is proven, from the
+ * centre out, and only the ring being worked on pulses; connected, everything is still.
  */
 @Composable
 fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
-    val spin = rememberInfiniteTransition(label = "spin")
-    val angle by spin.animateFloat(
-        0f, 360f, infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "angle"
-    )
-    val glow by spin.animateFloat(
-        0.35f, 0.6f, infiniteRepeatable(tween(2600), RepeatMode.Reverse), label = "glow"
-    )
+    val t = rememberInfiniteTransition(label = "portal")
+    val breath by t.animateFloat(0.45f, 1f, infiniteRepeatable(tween(2600), RepeatMode.Reverse), label = "breath")
+    val pulse by t.animateFloat(0.35f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
     val rings = Stage.entries.size
+    val idle = state.phase == Phase.IDLE
     val connecting = state.phase == Phase.CONNECTING
     val running = state.phase == Phase.RUNNING
     val failed = state.phase == Phase.ERROR
+    val gold = if (state.gamer) K.amber else K.gold
 
     val label = when (state.phase) {
         Phase.RUNNING -> "قطع"
@@ -68,10 +69,7 @@ fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
             val disc = outer * 0.42f
             val step = (outer - disc) / rings
             if (running) {
-                drawCircle(
-                    Brush.radialGradient(listOf(K.gold.copy(alpha = glow * 0.35f), K.night.copy(alpha = 0f)), c, outer),
-                    outer, c
-                )
+                drawCircle(Brush.radialGradient(listOf(gold.copy(alpha = 0.22f), Color.Transparent), c, outer), outer, c)
             }
             for (i in 0 until rings) {
                 val r = disc + step * (i + 0.6f)
@@ -80,20 +78,13 @@ fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
                 val active = connecting && i == state.proven
                 val broken = failed && i == state.proven
                 when {
-                    proven -> drawCircle(K.gold, r, c, style = Stroke(stroke))
-                    active -> {
-                        drawCircle(K.wineLine, r, c, style = Stroke(stroke))
-                        drawArc(
-                            K.gold, startAngle = angle + i * 50f, sweepAngle = 100f, useCenter = false,
-                            topLeft = Offset(c.x - r, c.y - r),
-                            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
-                            style = Stroke(stroke * 1.4f)
-                        )
-                    }
+                    proven -> drawCircle(gold, r, c, style = Stroke(stroke * 1.2f))
+                    active -> drawCircle(gold.copy(alpha = pulse), r, c, style = Stroke(stroke * 1.2f))
                     broken -> drawCircle(
                         K.ember, r, c,
                         style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
                     )
+                    idle -> drawCircle(K.wineLine.copy(alpha = breath * (1f - i * 0.12f)), r, c, style = Stroke(stroke))
                     else -> drawCircle(K.wineLine, r, c, style = Stroke(stroke))
                 }
             }
@@ -110,11 +101,11 @@ fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
             Canvas(Modifier.fillMaxSize()) {
                 drawCircle(
                     Brush.radialGradient(
-                        if (running) listOf(K.gold, Color0) else listOf(K.wine, K.night),
+                        if (running) listOf(gold, Color(0xFFB8862A)) else listOf(K.wine, K.night),
                         center, this.size.minDimension / 2
                     )
                 )
-                drawCircle(if (running) K.gold else K.wineLine, style = Stroke(1.5.dp.toPx()))
+                drawCircle(if (running) gold else K.wineLine, style = Stroke(1.5.dp.toPx()))
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(label, style = T.strong, color = if (running) K.night else K.champagne, textAlign = TextAlign.Center)
@@ -122,5 +113,3 @@ fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
         }
     }
 }
-
-private val Color0 = androidx.compose.ui.graphics.Color(0xFFB8862A)

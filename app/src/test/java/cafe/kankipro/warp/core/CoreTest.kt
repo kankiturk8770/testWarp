@@ -33,7 +33,7 @@ class CoreTest {
 
     @Test fun amneziaIsWireGuardWithItsOwnStrongDisguise() {
         val a = Options(transport = Transport.AMNEZIA).toArgs("/x/identity.toml")
-        assertTrue("--wg" in a && "--no-profile-retry" in a)
+        assertTrue("--wg" in a && "--no-profile-retry" !in a) // falls back to the balanced profiles
         assertEquals("aggressive", a[a.indexOf("--noize") + 1])
         assertTrue("--noize" !in Options(transport = Transport.WIREGUARD).toArgs("/x/identity.toml"))
     }
@@ -86,11 +86,24 @@ class CoreTest {
             Transport.MASQUE_H2 to "162.159.198.2:443"))
         val a = o.toArgs("/x/identity.toml")
         assertEquals("188.114.97.3:4500", a[a.indexOf("--wg-peer") + 1])
+        // pinned: no quick reconnect to an old gateway
+        assertTrue("--no-quick-reconnect" in a && "--quick-reconnect" !in a)
         val h2 = o.copy(transport = Transport.MASQUE_H2).toArgs("/x/identity.toml")
         assertEquals("162.159.198.2:443", h2[h2.indexOf("--peer") + 1])
         val back = Options.fromJson(o.copy(gamer = true, gameTransport = Transport.WIREGUARD).toJson())
         assertEquals(o.pins, back.pins)
         assertTrue(back.gamer)
         assertEquals(Transport.WIREGUARD, back.gameTransport)
+    }
+
+    @Test fun scannerTimestampsAlwaysRise() {
+        val a = WgHello.stamp(); val b = WgHello.stamp()
+        assertTrue(java.math.BigInteger(1, b) > java.math.BigInteger(1, a))
+    }
+
+    @Test fun gameReadyMeansSteadyAndNoLoss() {
+        assertTrue(WgScan.Hit("x:1", 60, 4, 0).gameReady)
+        assertTrue(!WgScan.Hit("x:1", 60, 4, 10).gameReady)
+        assertTrue(!WgScan.Hit("x:1", 130, 4, 0).gameReady)
     }
 }

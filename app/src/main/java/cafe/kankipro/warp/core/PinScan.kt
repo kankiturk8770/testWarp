@@ -35,7 +35,7 @@ object PinScan {
     fun canScan(t: Transport) = t == Transport.AMNEZIA || t == Transport.WIREGUARD || t == Transport.MASQUE_H2
 
     /** Scans for [t]; [onPin] gets the best endpoint when one answered. */
-    fun start(ctx: Context, t: Transport, onPin: (String) -> Unit) {
+    fun start(ctx: Context, t: Transport, onPin: (String, Int) -> Unit) {
         if (_state.value.running || !canScan(t)) return
         _state.value = State(transport = t, running = true)
         job = scope.launch {
@@ -54,7 +54,7 @@ object PinScan {
             }
             val best = hits.firstOrNull()
             if (best != null) {
-                onPin(best.endpoint)
+                onPin(best.endpoint, best.pingMs)
                 Engine.note("white scan ${t.title}: ${hits.size} answered, pinned ${best.endpoint} (${best.pingMs} ms)")
             }
             _state.value = _state.value.copy(

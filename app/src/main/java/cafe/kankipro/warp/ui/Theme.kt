@@ -21,6 +21,10 @@ object K {
     val champagne = Color(0xFFF6E3B4) // primary text
     val rose = Color(0xFFB58A97)     // secondary text
     val ember = Color(0xFFFF5A5F)    // failure
+    val ok = Color(0xFF7ED6A0)       // healthy: good ping, success lines in the log
+    val amber = Color(0xFFF2A23A)    // the gamer mode's warmer accent, middling ping
+    val ash = Color(0xFF8C7A80)      // timestamps and quiet labels in the log
+    val glass = Color(0x332B0C19)    // the info cards' fill over the night background
 }
 
 val Vazir = FontFamily(
@@ -38,6 +42,7 @@ object T {
     val big = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Bold, fontSize = 28.sp, textDirection = rtl)
     val body = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 22.sp, textDirection = rtl)
     val strong = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Bold, fontSize = 16.sp, textDirection = rtl)
+    val mono = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 20.sp, textDirection = TextDirection.Ltr)
     val small = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Medium, fontSize = 12.sp, textDirection = rtl)
 }
 

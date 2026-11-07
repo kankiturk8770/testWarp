@@ -30,6 +30,13 @@ object Probe {
      */
     private val HOSTS = listOf("1.1.1.1", "cloudflare.com")
 
+    /** One request through the SOCKS port; [attempt] picks the host, so tries alternate between them. */
+    fun traceOnce(port: Int, timeoutMs: Int, attempt: Int): Egress? = try {
+        once(port, HOSTS[attempt % HOSTS.size], timeoutMs)
+    } catch (_: Exception) {
+        null
+    }
+
     fun trace(port: Int, timeoutMs: Int = 6000): Egress? {
         for (host in HOSTS) {
             val got = try {
@@ -75,15 +82,20 @@ object Probe {
      * plain HTTPS request to 1.1.1.1 goes through it.
      */
     fun direct(timeoutMs: Int): Egress? = try {
-        val c = java.net.URL("https://1.1.1.1/cdn-cgi/trace").openConnection() as HttpsURLConnection
-        c.connectTimeout = timeoutMs
-        c.readTimeout = timeoutMs
-        c.useCaches = false
-        val started = System.nanoTime()
-        val body = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-        val ms = (System.nanoTime() - started) / 1_000_000
-        c.disconnect()
-        parseTrace(body)?.copy(pingMs = ms)
+        fun get(): Pair<String, Long> {
+            val c = java.net.URL("https://1.1.1.1/cdn-cgi/trace").openConnection() as HttpsURLConnection
+            c.connectTimeout = timeoutMs
+            c.readTimeout = timeoutMs
+            c.useCaches = false
+            val started = System.nanoTime()
+            val body = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            return body to (System.nanoTime() - started) / 1_000_000
+        }
+        // The first request also pays for the TCP and TLS handshakes; the second one, on the kept-alive
+        // connection, is one round trip: that is the ping.
+        val (body, first) = get()
+        val ping = runCatching { get().second }.getOrDefault(first)
+        parseTrace(body)?.copy(pingMs = ping)
     } catch (_: Exception) {
         null
     }

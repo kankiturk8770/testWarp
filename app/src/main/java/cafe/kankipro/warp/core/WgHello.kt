@@ -30,7 +30,7 @@ class WgHello private constructor(
     class Sent internal constructor(
         val junk: List<ByteArray>,
         val packet: ByteArray,
-        internal val sender: Int,
+        val sender: Int,
         internal val ePriv: ByteArray,
         internal val ck: ByteArray,
         internal val h: ByteArray,
@@ -38,7 +38,10 @@ class WgHello private constructor(
 
     private val rnd = SecureRandom()
 
-    fun hello(nowMs: Long = System.currentTimeMillis()): Sent {
+    fun hello(nowMs: Long = System.currentTimeMillis()): Sent = hello(tai64n(nowMs))
+
+    /** With a given TAI64N time: the scanner hands out strictly rising ones ([stamp]). */
+    fun hello(tai: ByteArray): Sent {
         var ck = KCrypto.hash(CONSTRUCTION)
         var h = KCrypto.hash(ck, IDENTIFIER)
         h = KCrypto.hash(h, serverPub)
@@ -51,7 +54,7 @@ class WgHello private constructor(
         val encStatic = KCrypto.seal(k, KCrypto.wgNonce(0), pub, h)
         h = KCrypto.hash(h, encStatic)
         kdf(ck, KCrypto.x25519(priv, serverPub), 2).let { ck = it[0]; k = it[1] }
-        val encTime = KCrypto.seal(k, KCrypto.wgNonce(0), tai64n(nowMs), h)
+        val encTime = KCrypto.seal(k, KCrypto.wgNonce(0), tai, h)
         h = KCrypto.hash(h, encTime)
 
         val sender = rnd.nextInt()
@@ -118,6 +121,35 @@ class WgHello private constructor(
                 out.add(prev)
             }
             return out
+        }
+
+        private var lastStampNs = 0L
+
+        /**
+         * A TAI64N time later than every one handed out before, at nanosecond steps. A WireGuard
+         * server drops a handshake whose time is not later than the last one it took from the same
+         * key (replay protection): many handshakes of one account in the same millisecond, as a
+         * scan sends them, would all but one be dropped. It stays within microseconds of the real
+         * clock, so the engine's own handshake right after is still later.
+         */
+        @Synchronized
+        fun stamp(): ByteArray {
+            val now = System.currentTimeMillis() * 1_000_000L + System.nanoTime() % 1_000_000L
+            val t = maxOf(now, lastStampNs + 1_000)
+            lastStampNs = t
+            val sec = 0x400000000000000aL + t / 1_000_000_000L
+            val nano = t % 1_000_000_000L
+            val b = ByteArray(12)
+            for (i in 0 until 8) b[i] = (sec ushr (56 - 8 * i)).toByte()
+            for (i in 0 until 4) b[8 + i] = (nano ushr (24 - 8 * i)).toByte()
+            return b
+        }
+
+        /** The sender index a handshake answer (or cookie reply) names: ours, to match it to its handshake. */
+        fun answerFor(packet: ByteArray): Int? = when {
+            packet.size == RESP_LEN -> getLe32(packet, 8).toInt()
+            packet.size == COOKIE_LEN -> getLe32(packet, 4).toInt()
+            else -> null
         }
 
         /** TAI64N: ۸ بایت ثانیه (از 2^62 + 10) و ۴ بایت نانوثانیه، big-endian */

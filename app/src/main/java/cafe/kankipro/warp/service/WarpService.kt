@@ -68,7 +68,8 @@ class WarpService : VpnService() {
         try {
             val fd = openTun(options)
             val chain = Options.chain(options, Prefs.lastGood(this))
-            Engine.note("chain: " + chain.joinToString(" → ") { it.transport.title })
+            Engine.chainText = chain.joinToString(" → ") { it.transport.title }
+            Engine.note("chain: " + Engine.chainText)
             var hevStarted = false
             var lastError: String? = null
             for ((i, c) in chain.withIndex()) {
@@ -114,11 +115,20 @@ class WarpService : VpnService() {
                     if (!Engine.awaitHev()) error("موتور تونل گوشی روشن نشد")
                     hevStarted = true
                 }
-                // The gateway may already be known (a remembered one answers at once).
-                Engine.update { it.copy(proven = if (it.gateway.isNotBlank()) 3 else 2,
-                    message = if (it.gateway.isNotBlank()) "فرستادن یک درخواست واقعی از داخل تونل…" else "پیدا کردن دروازه‌ی کلادفلر…") }
+                val pin = c.pins[c.transport]?.takeIf { c.pinnable }
+                // The gateway may already be up (a remembered one answers at once).
+                Engine.update { it.copy(proven = if (Engine.tunnelReady) 3 else 2,
+                    message = when {
+                        Engine.tunnelReady -> "فرستادن یک درخواست واقعی از داخل تونل…"
+                        pin != null -> "اتصال فقط به آی‌پی ثابت $pin…"
+                        else -> "پیدا کردن دروازه‌ی کلادفلر…"
+                    }) }
 
-                val budget = if (i == 0) FIRST_PROBE_MS else NEXT_PROBE_MS
+                val budget = when {
+                    pin != null -> PIN_PROBE_MS
+                    i == 0 -> FIRST_PROBE_MS
+                    else -> NEXT_PROBE_MS
+                }
                 val check = Engine.awaitInternet(c.port, budget) { n ->
                     if (n > 1) Engine.update { s -> s.copy(message = "آزمایش تونل، بار $n…") }
                 }
@@ -133,8 +143,16 @@ class WarpService : VpnService() {
                     startWatch(mine, c)
                     return
                 }
-                lastError = check.error ?: "از داخل تونل جوابی نیامد"
+                lastError = when {
+                    check.error != null -> check.error
+                    pin != null -> "آی‌پی ثابت $pin جواب نداد؛ «آی‌پی سفید» را دوباره بزن یا «حذف» کن"
+                    else -> "از داخل تونل جوابی نیامد"
+                }
                 Engine.note("${c.transport.title}: $lastError")
+                if (i + 1 < chain.size) {
+                    Engine.update { it.copy(message = (if (pin != null) "آی‌پی ثابت جواب نداد؛ " else "") +
+                        "رفتن سراغ ${chain[i + 1].transport.title}…") }
+                }
             }
             error(lastError?.let { "وصل نشد: $it" } ?: "هیچ‌کدام از پروتکل‌ها جواب نداد. گزارش را ببین یا پروتکل دیگری امتحان کن.")
         } catch (e: CancellationException) {
@@ -248,6 +266,8 @@ class WarpService : VpnService() {
         private const val CORE_LISTEN_MS = 15_000L
         // The account is made before these start; they cover the gateway search and the tunnel.
         private const val FIRST_PROBE_MS = 60_000L
+        // A pinned gateway: no scan to wait for, so it either answers soon or not at all.
+        private const val PIN_PROBE_MS = 30_000L
         private const val NEXT_PROBE_MS = 35_000L
         const val ACTION_START = "cafe.kankipro.warp.START"
         const val ACTION_STOP = "cafe.kankipro.warp.STOP"

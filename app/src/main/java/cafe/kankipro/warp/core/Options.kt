@@ -6,8 +6,10 @@ import org.json.JSONObject
 enum class Transport(val title: String, val hint: String, val flags: List<String>) {
     // WireGuard with AmneziaWG 1.5 style disguise: signature packets (I1-I5) that look like other
     // protocols and junk packets around the handshake. Cloudflare's plain WireGuard server drops
-    // them unread, so they need no server of ours. Its own strongest profile, no fallback profiles.
-    AMNEZIA("Amnezia", "WireGuard با بسته‌های پوششی شدید، مثل AmneziaVPN", listOf("--wg", "--noize", "aggressive", "--no-profile-retry")),
+    // them unread, so they need no server of ours.
+    // Strongest profile first; if it does not pass on a gateway, the core tries balanced, light and off
+    // there before giving up on that gateway.
+    AMNEZIA("Amnezia", "WireGuard با بسته‌های پوششی شدید، مثل AmneziaVPN", listOf("--wg", "--noize", "aggressive")),
     WIREGUARD("WireGuard", "WireGuard با پوشش متعادل؛ اگر نشد سبک‌تر و شدیدتر", listOf("--wg")),
     MASQUE_H2("MASQUE · HTTP/2", "روی TCP 443، مثل یک سایت معمولی؛ وقتی UDP بسته است", listOf("--masque", "--h2")),
     MASQUE_H3("MASQUE · HTTP/3", "روی QUIC (UDP)؛ کم‌پینگ‌ترین اگر باز باشد", listOf("--masque", "--h3")),
@@ -41,6 +43,8 @@ data class Options(
     val port: Int = 1819,
     /** Normal mode: a gateway the white-list scan found for a transport, used instead of the core's own scan. */
     val pins: Map<Transport, String> = emptyMap(),
+    /** The handshake time the scan measured for each pin, for its badge. */
+    val pinPing: Map<Transport, Int> = emptyMap(),
     /** «کاربر گیمر»: Amnezia/WireGuard straight on the TUN (GameEngine) instead of the core. */
     val gamer: Boolean = false,
     val gameTransport: Transport = Transport.AMNEZIA,
@@ -54,8 +58,9 @@ data class Options(
         add("--scan"); add(scan.value)
         add("--ip"); add(ip.value)
         if (fragment) add("--fragment")
-        // Reuse the gateway that worked last time without rescanning, when it still answers.
-        add("--quick-reconnect")
+        // Reuse the gateway that worked last time without rescanning, when it still answers; with a
+        // pinned gateway nothing else is tried: the core goes to that one only and never scans.
+        add(if (pins[transport] != null && pinnable) "--no-quick-reconnect" else "--quick-reconnect")
         pins[transport]?.let { pin ->
             when (transport) {
                 Transport.AMNEZIA, Transport.WIREGUARD -> { add("--wg-peer"); add(pin) }
@@ -65,6 +70,9 @@ data class Options(
         }
     }
 
+    /** Transports that take a pinned gateway. */
+    val pinnable: Boolean get() = transport in PINNABLE
+
     fun toJson(): String = JSONObject()
         .put("transport", transport.name)
         .put("scan", scan.name)
@@ -72,6 +80,7 @@ data class Options(
         .put("fragment", fragment)
         .put("autoFallback", autoFallback)
         .put("pins", JSONObject().apply { pins.forEach { (t, v) -> put(t.name, v) } })
+        .put("pinPing", JSONObject().apply { pinPing.forEach { (t, v) -> put(t.name, v) } })
         .put("gamer", gamer)
         .put("gameTransport", gameTransport.name)
         .toString()
@@ -91,6 +100,9 @@ data class Options(
                         o.keys().asSequence().mapNotNull { k -> Transport.of(k)?.let { it to o.optString(k) } }
                             .filter { it.second.isNotBlank() }.toMap()
                     } ?: emptyMap(),
+                    pinPing = j.optJSONObject("pinPing")?.let { o ->
+                        o.keys().asSequence().mapNotNull { k -> Transport.of(k)?.let { it to o.optInt(k) } }.toMap()
+                    } ?: emptyMap(),
                     gamer = j.optBoolean("gamer", false),
                     gameTransport = Transport.of(j.optString("gameTransport"))
                         ?.takeIf { it == Transport.AMNEZIA || it == Transport.WIREGUARD } ?: Transport.AMNEZIA,
@@ -99,6 +111,8 @@ data class Options(
                 Options()
             }
         }
+
+        val PINNABLE = setOf(Transport.AMNEZIA, Transport.WIREGUARD, Transport.MASQUE_H2, Transport.MASQUE_H3)
 
         /** Order tried after the user's choice: what survives a hostile network first. */
         val RANKING = listOf(

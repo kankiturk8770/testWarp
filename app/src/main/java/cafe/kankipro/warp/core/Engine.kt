@@ -91,7 +91,7 @@ object Engine {
         return "${m.groupValues[2]} ${m.groupValues[4]}"
     }
 
-    private val GATEWAY = Regex("""(?:using cloudflare edge|selected MASQUE gateway)\s+([0-9a-fA-F.:\[\]]+)""")
+    private val GATEWAY = Regex("""(?:using cloudflare edge|selected MASQUE gateway|testing forced peer|using forced peer)\s+([0-9a-fA-F.:\[\]]+)""")
     private val CACHED = Regex("""cached (?:gateway|endpoint)\s+([0-9a-fA-F.:\[\]]+)\s+still works""")
 
     /** Set when the core's log says its tunnel carries data; the probe waits for it. */
@@ -101,9 +101,10 @@ object Engine {
         if ("validated" in line || "serving socks5" in line || "still works" in line ||
             "using cloudflare edge" in line || "masque-in-masque ready" in line) tunnelReady = true
         val gw = GATEWAY.find(line)?.groupValues?.get(1) ?: CACHED.find(line)?.groupValues?.get(1)
-        if (gw != null) update {
-            val proven = if (it.phase == Phase.CONNECTING && it.proven == Stage.GATEWAY.ordinal) it.proven + 1 else it.proven
-            it.copy(gateway = gw, proven = proven)
+        if (gw != null) update { it.copy(gateway = gw) }
+        // The gateway stage is proven by the core saying its tunnel carries data, not by a name.
+        if (tunnelReady) update {
+            if (it.phase == Phase.CONNECTING && it.proven == Stage.GATEWAY.ordinal) it.copy(proven = it.proven + 1) else it
         }
         when {
             "provisioning dedicated masque account" in line || "no masque identity found" in line ||
@@ -191,6 +192,36 @@ object Engine {
             "کلادفلر در ${timeoutMs / 1000} ثانیه جواب نداد"
         }
 
+    /** What the settings card shows about the saved WARP accounts. */
+    data class AccountInfo(val device: String, val wireguard: Boolean, val masque: Boolean, val ipv4: String)
+
+    fun accountInfo(ctx: Context): AccountInfo {
+        val dir = File(ctx.filesDir, "warp")
+        fun field(f: File, key: String) = runCatching {
+            f.readLines().firstOrNull { it.trim().startsWith("$key ") || it.trim().startsWith("$key=") }
+                ?.substringAfter('=')?.trim()?.removeSurrounding("\"")
+        }.getOrNull().orEmpty()
+        val wg = File(dir, "identity.toml")
+        val mq = File(dir, "identity-masque.toml")
+        val device = field(wg, "device_id").ifBlank { field(mq, "device_id") }
+        return AccountInfo(
+            device = device,
+            wireguard = field(wg, "wg_private_key").isNotBlank(),
+            masque = field(mq, "cert_pem").isNotBlank(),
+            ipv4 = field(wg, "ipv4").ifBlank { field(mq, "ipv4") },
+        )
+    }
+
+    /** The core's version, for the log screen's chip (null until the library loads). */
+    val coreVersion: String? by lazy {
+        runCatching {
+            if (!Native.ensure()) null else Native.coreVersion()?.let { JSONObject(it).optString("version").ifBlank { null } }
+        }.getOrNull()
+    }
+
+    /** The transports the last connect tried, in order, for the log screen. */
+    @Volatile var chainText: String = ""
+
     /** What the settings screen says about the account: null when nothing is going on. */
     private val _account = MutableStateFlow<String?>(null)
     val account: StateFlow<String?> = _account
@@ -243,6 +274,12 @@ object Engine {
         stopCore()
         clearCoreEnv()
         tunnelReady = false
+        // Lines the last core left in the log ring belong to it: read them now, so the gateway it
+        // named is not taken for this run's.
+        pumpLog()
+        val pin = options.pins[options.transport]?.takeIf { options.pinnable }
+        update { it.copy(gateway = pin.orEmpty()) }
+        pin?.let { note("pinned gateway: $it (no scan)") }
         val args = options.toArgs(identityPath(ctx))
         note("core ${args.joinToString(" ")}")
         val reply = JSONObject(Native.coreStart(JSONArray(args).toString()))
@@ -328,8 +365,9 @@ object Engine {
                     n++
                     onTry(n)
                     lastTry = now
-                    Probe.trace(port, if (tunnelReady) 4000 else 2500)?.let { return@withContext Check(it, null) }
-                    if (tunnelReady) delay(400)
+                    // 2.5 s a try, alternating 1.1.1.1 and cloudflare.com
+                    Probe.traceOnce(port, 2500, n - 1)?.let { return@withContext Check(it, null) }
+                    if (tunnelReady) delay(300)
                 } else {
                     delay(200)
                 }
