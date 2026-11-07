@@ -62,6 +62,9 @@ class CoreTest {
         assertTrue("Endpoint = 162.159.192.1:2408" in plain && "Jc" !in plain)
         val amnezia = id.config("162.159.192.1:2408", disguise = true)
         assertTrue("Jc = 4" in amnezia && "I1" !in amnezia && "S1" !in amnezia)
+        // the engine needs all four headers once Jc is set; plain WireGuard's own values
+        assertTrue((1..4).all { "H$it = $it" in amnezia })
+        assertTrue("H1" !in plain)
         // the scanner's handshake can be built from it (real WireGuard crypto)
         val hello = WgHello.of(amnezia)!!
         val sent = hello.hello()

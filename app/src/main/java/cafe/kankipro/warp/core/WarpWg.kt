@@ -9,7 +9,7 @@ import java.util.Base64
  * into a plain AmneziaWG config. Used by the gamer mode (straight on the TUN, no core in between)
  * and by the WireGuard scanner.
  *
- * The headers stay plain WireGuard (H1..H4 = 1..4, the "reserved" bytes zero), as every stock
+ * The headers stay plain WireGuard (H1..H4 = 1..4, written out with the disguise, the "reserved" bytes zero), as every stock
  * WireGuard client of a WARP account sends them; Cloudflare answers those in kind. The account's
  * client_id could go in those bytes ([header]), but then the answers would carry it too and a
  * mismatch drops every packet, so it is kept only for a later test.
@@ -47,6 +47,11 @@ data class WarpWg(
             appendLine("Jc = 4")
             appendLine("Jmin = 40")
             appendLine("Jmax = 70")
+            // Once any Amnezia key is set, the engine's config reader (wgtunnel/wireproxy-awg,
+            // CreateIPCRequest) sends h1..h4 to the Go side whether given or not, empty when not, and
+            // amneziawg-go cannot parse an empty header: the whole config was refused
+            // (GO_ACTIVATION_ERROR_CODE). These are plain WireGuard's own types, what Cloudflare reads.
+            for (n in 1..4) appendLine("H$n = $n")
         }
         appendLine()
         appendLine("[Peer]")

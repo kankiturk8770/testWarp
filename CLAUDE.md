@@ -20,6 +20,11 @@
 فقط اسم فایل، کد، دستور و اسم پروتکل‌ها انگلیسی می‌ماند. صاحب پروژه دارد برنامه‌نویسی یاد می‌گیرد: جواب‌ها کوتاه و ساده.
 
 ## گزارش کارها
+- 2026-11-08 — نسخه‌ی 0.4.2: گزارش گوشی: Amnezia گیمر «engine refused the config (full): GO_ACTIVATION_ERROR_CODE» و بعد «took the config plain WireGuard»؛
+  پس پوشش Amnezia روشن نبود (Amnezia حالت عادی، هسته‌ی Aether، درست کار کرد: `aggressive passed`). **علت از سورس:** موتور `amneziawg-android`
+  2.3.7 کانفیگ را با `wgtunnel/wireproxy-awg` می‌خواند؛ `CreateIPCRequest` با هر کلید Amnezia همیشه `h1..h4` را می‌فرستد (خالی اگر نباشند) و
+  `amneziawg-go` (`newMagicHeader`) رشته‌ی خالی را رد می‌کند. **رفع:** `H1..H4 = 1..4` همراه Jc. **قانون:** با Jc/S همیشه H1–H4 هم بنویس.
+  (کد Go در محیط ابری اجرا نشد؛ فقط خوانده شد.) روی گوشی هنوز نه.
 - 2026-11-08 — نسخه‌ی 0.4.1: ویدیوی صاحب پروژه: اسکن گیمر درست شد (۶ دروازه، ۱۱۰–۱۴۶ms، افت ۰)؛ WireGuard گیمینگ وصل (TR · MXP، پینگ ۱۸۰)؛
   Amnezia گیمینگ «وصل نشد» بی‌علت و بعد بسته شدن کامل برنامه. علت محتمل: I1–I3 در `WarpWg.config` (کرش Go در موتور، با try/catch گرفته نمی‌شود).
   رفع: فقط Jc/Jmin/Jmax؛ `GameEngine.up` سه مرحله (کامل، بی I، ساده) با `reason()` از `BackendException`؛ `Probe.dnsPing`. **قانون:** در موتور
