@@ -109,4 +109,15 @@ class CoreTest {
         assertTrue(!WgScan.Hit("x:1", 60, 4, 10).gameReady)
         assertTrue(!WgScan.Hit("x:1", 130, 4, 0).gameReady)
     }
+
+    @Test fun theConnectionSaysWhatReallyCarriesIt() {
+        Engine.wgProfile = "aggressive"
+        assertEquals("Amnezia · پوشش aggressive", Engine.actualOf(Transport.AMNEZIA))
+        Engine.wgProfile = "off"
+        assertEquals("WireGuard ساده (بی‌پوشش)", Engine.actualOf(Transport.AMNEZIA))
+        Engine.wgProfile = "balanced"
+        assertEquals("WireGuard · پوشش balanced", Engine.actualOf(Transport.WIREGUARD))
+        assertEquals(Transport.MASQUE_H2.title, Engine.actualOf(Transport.MASQUE_H2))
+        Engine.wgProfile = ""
+    }
 }

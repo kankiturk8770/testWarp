@@ -45,6 +45,8 @@ data class ConnState(
     val startedAt: Long = 0,
     /** This connection is the gamer mode's (GameEngine), not the core's (WarpService). */
     val gamer: Boolean = false,
+    /** What really carries the traffic, said plainly («Amnezia · پوشش aggressive» / «WireGuard ساده»). */
+    val actual: String = "",
 )
 
 /** Traffic counters on their own flow: they tick every second and must not redraw the screen. */
@@ -97,7 +99,26 @@ object Engine {
     /** Set when the core's log says its tunnel carries data; the probe waits for it. */
     @Volatile var tunnelReady = false
 
+    /** The disguise profile the core's WireGuard passed with (aethernoize: aggressive, balanced, light, off). */
+    @Volatile var wgProfile: String = ""
+    private val PROFILE = Regex("""profile '([a-zA-Z]+)' passed""")
+
+    /**
+     * Amnezia and WireGuard are the same tunnel; only the disguise differs, and the core's log calls
+     * both «wireguard». This names what really connected and with which disguise profile; one that
+     * passed only with «off» is plain WireGuard, whatever was picked.
+     */
+    fun actualOf(t: Transport): String = when (t) {
+        Transport.AMNEZIA, Transport.WIREGUARD -> when (val p = wgProfile) {
+            "" -> t.title
+            "off" -> "WireGuard ساده (بی‌پوشش)"
+            else -> (if (t == Transport.AMNEZIA) "Amnezia" else "WireGuard") + " · پوشش $p"
+        }
+        else -> t.title
+    }
+
     private fun learn(line: String) {
+        PROFILE.find(line)?.let { wgProfile = it.groupValues[1].lowercase() }
         if ("validated" in line || "serving socks5" in line || "still works" in line ||
             "using cloudflare edge" in line || "masque-in-masque ready" in line) tunnelReady = true
         val gw = GATEWAY.find(line)?.groupValues?.get(1) ?: CACHED.find(line)?.groupValues?.get(1)
@@ -274,6 +295,7 @@ object Engine {
         stopCore()
         clearCoreEnv()
         tunnelReady = false
+        wgProfile = ""
         // Lines the last core left in the log ring belong to it: read them now, so the gateway it
         // named is not taken for this run's.
         pumpLog()

@@ -20,6 +20,8 @@
 فقط اسم فایل، کد، دستور و اسم پروتکل‌ها انگلیسی می‌ماند. صاحب پروژه دارد برنامه‌نویسی یاد می‌گیرد: جواب‌ها کوتاه و ساده.
 
 ## گزارش کارها
+- 2026-11-08 — نسخه‌ی 0.4.3: صاحب پروژه گیج شد چون لاگ Amnezia را «wireguard» می‌گفت و گیمر با WireGuard ساده می‌نوشت «verified via Amnezia».
+  حالا `ConnState.actual` و خط «✓ وصل با: …»: عادی از `Engine.wgProfile` (خط `profile 'X' passed`، `actualOf`)، گیمر از `GameEngine.took`. تست: ۱۱ تست.
 - 2026-11-08 — نسخه‌ی 0.4.2: گزارش گوشی: Amnezia گیمر «engine refused the config (full): GO_ACTIVATION_ERROR_CODE» و بعد «took the config plain WireGuard»؛
   پس پوشش Amnezia روشن نبود (Amnezia حالت عادی، هسته‌ی Aether، درست کار کرد: `aggressive passed`). **علت از سورس:** موتور `amneziawg-android`
   2.3.7 کانفیگ را با `wgtunnel/wireproxy-awg` می‌خواند؛ `CreateIPCRequest` با هر کلید Amnezia همیشه `h1..h4` را می‌فرستد (خالی اگر نباشند) و

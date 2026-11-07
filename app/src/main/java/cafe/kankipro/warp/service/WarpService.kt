@@ -137,7 +137,9 @@ class WarpService : VpnService() {
                 if (egress != null) {
                     Prefs.rememberGood(this, c.transport)
                     Engine.note("verified via ${c.transport.title}: ${egress.ip} ${egress.colo} warp=${egress.warp}")
-                    Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "",
+                    val actual = Engine.actualOf(c.transport)
+                    Engine.note("✓ وصل با: $actual")
+                    Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "", actual = actual,
                         egress = egress, startedAt = SystemClock.elapsedRealtime()) }
                     foreground("وصل · ${c.transport.title} · ${egress.colo}")
                     startWatch(mine, c)

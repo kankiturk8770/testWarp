@@ -191,8 +191,15 @@ object GameEngine {
                 // The one that worked goes to the top of this network's list.
                 hits.firstOrNull { it.endpoint == used }?.let { pick(ctx, it) }
                 val ep = used
-                Engine.note("game: verified via ${transport.title} $ep: ${out.ip} ${out.colo}")
-                Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "", egress = out,
+                // Say what really connected: Amnezia only when the engine took the config with its junk packets.
+                val actual = when {
+                    transport != Transport.AMNEZIA -> "WireGuard ساده (بی‌پوشش)"
+                    took == "full" -> "Amnezia · پوشش Jc (بسته‌ی آشغال)"
+                    else -> "WireGuard ساده: موتور پوشش Amnezia را نپذیرفت"
+                }
+                Engine.note("game: verified $ep: ${out.ip} ${out.colo}")
+                Engine.note("✓ وصل با: $actual")
+                Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "", egress = out, actual = actual,
                     startedAt = SystemClock.elapsedRealtime()) }
                 watch(ctx)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -211,6 +218,9 @@ object GameEngine {
      * disguise at all. Each refusal is written to the log with the engine's own reason, so a
      * «وصل نشد» never comes without one.
      */
+    /** Which of [up]'s configs the engine took: «full» (with the disguise) or a simpler one. */
+    @Volatile private var took = ""
+
     private fun up(ctx: Context, text: String) {
         val noI = text.lines().filterNot { it.trim().matches(Regex("I[1-5]\\s*=.*")) }.joinToString("\n")
         val plain = noI.lines().filterNot { it.trim().matches(Regex("J(c|min|max)\\s*=.*")) }.joinToString("\n")
@@ -220,6 +230,7 @@ object GameEngine {
             try {
                 val config = Config.parse(cfg.byteInputStream())
                 backend(ctx).setState(tunnel, Tunnel.State.UP, config)
+                took = name
                 if (name != "full") Engine.note("game: the engine took the config $name")
                 return
             } catch (e: Exception) {

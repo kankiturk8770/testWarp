@@ -196,7 +196,8 @@ private fun Headline(s: ConnState) {
         LaunchedEffect(s.startedAt) { while (true) { now = SystemClock.elapsedRealtime(); delay(1000) } }
         Text(clock(((now - s.startedAt) / 1000).coerceAtLeast(0)), style = T.mono,
             color = if (s.gamer) K.amber else K.gold)
-        Text(s.transport?.title.orEmpty() + if (s.gamer) " · گیمر" else "", style = T.small, color = K.rose)
+        Text((s.actual.ifBlank { s.transport?.title.orEmpty() }) + if (s.gamer) " · گیمر" else "", style = T.small,
+            color = if ("ساده" in s.actual && s.transport == Transport.AMNEZIA) K.amber else K.rose)
         return
     }
     val sub = when (s.phase) {
@@ -373,6 +374,7 @@ private fun ActiveCard(s: ConnState, options: Options) {
         Column(Modifier.weight(1f)) {
             Text(t.title + if (s.gamer) " گیمینگ" else "", style = T.strong, color = if (s.gamer) K.amber else K.gold)
             val pin = options.pins[t]
+            if (s.actual.isNotBlank()) Text(s.actual, style = T.small, color = K.champagne)
             Text(
                 when {
                     s.gamer -> "مستقیم روی گوشی، بدون لایه‌ی اضافه"
