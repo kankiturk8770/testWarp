@@ -18,7 +18,7 @@ class CoreTest {
     @Test fun chainStartsWithChoiceThenRememberedThenRanking() {
         val o = Options(transport = Transport.MASQUE_H3, fragment = false)
         val c = Options.chain(o, Transport.WIREGUARD)
-        assertEquals(listOf(Transport.MASQUE_H3, Transport.WIREGUARD, Transport.MASQUE_H2), c.map { it.transport })
+        assertEquals(listOf(Transport.MASQUE_H3, Transport.WIREGUARD, Transport.AMNEZIA), c.map { it.transport })
         assertEquals(false, c[0].fragment)
         assertTrue(c.drop(1).all { it.fragment })
         assertEquals(1, Options.chain(o.copy(autoFallback = false), null).size)
@@ -29,6 +29,13 @@ class CoreTest {
         assertEquals("127.0.0.1:1819", a[a.indexOf("--bind") + 1])
         assertTrue("--masque" in a && "--h2" in a && "--fragment" in a)
         assertEquals("turbo", a[a.indexOf("--scan") + 1])
+    }
+
+    @Test fun amneziaIsWireGuardWithItsOwnStrongDisguise() {
+        val a = Options(transport = Transport.AMNEZIA).toArgs("/x/identity.toml")
+        assertTrue("--wg" in a && "--no-profile-retry" in a)
+        assertEquals("aggressive", a[a.indexOf("--noize") + 1])
+        assertTrue("--noize" !in Options(transport = Transport.WIREGUARD).toArgs("/x/identity.toml"))
     }
 
     @Test fun optionsSurviveJson() {

@@ -135,7 +135,7 @@ object Engine {
             Transport.MASQUE_H2, Transport.MASQUE_H3 -> listOf(masque)
             Transport.GOOL -> listOf(masque, File(dir, "identity-masque-gool.toml"))
             Transport.MIM -> listOf(masque, File(dir, "identity-masque-secondary.toml"))
-            Transport.WIREGUARD -> listOf(File(dir, "identity.toml"))
+            Transport.WIREGUARD, Transport.AMNEZIA -> listOf(File(dir, "identity.toml"))
         }
     }
 
@@ -163,7 +163,7 @@ object Engine {
                 Transport.MASQUE_H2, Transport.MASQUE_H3 -> "masque"
                 Transport.GOOL -> "gool"
                 Transport.MIM -> "mim"
-                Transport.WIREGUARD -> "wg"
+                Transport.WIREGUARD, Transport.AMNEZIA -> "wg"
             }
             val args = listOf("--config", identityPath(ctx), "--log-level", "info", "--register", set)
             note("register: ${args.joinToString(" ")}")

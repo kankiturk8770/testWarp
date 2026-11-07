@@ -4,11 +4,15 @@ import org.json.JSONObject
 
 /** How the core reaches Cloudflare. [flags] are the core's own command-line switches. */
 enum class Transport(val title: String, val hint: String, val flags: List<String>) {
+    // WireGuard with AmneziaWG 1.5 style disguise: signature packets (I1-I5) that look like other
+    // protocols and junk packets around the handshake. Cloudflare's plain WireGuard server drops
+    // them unread, so they need no server of ours. Its own strongest profile, no fallback profiles.
+    AMNEZIA("Amnezia", "WireGuard با بسته‌های پوششی شدید، مثل AmneziaVPN", listOf("--wg", "--noize", "aggressive", "--no-profile-retry")),
+    WIREGUARD("WireGuard", "WireGuard با پوشش متعادل؛ اگر نشد سبک‌تر و شدیدتر", listOf("--wg")),
     MASQUE_H2("MASQUE · HTTP/2", "روی TCP 443، مثل یک سایت معمولی؛ وقتی UDP بسته است", listOf("--masque", "--h2")),
     MASQUE_H3("MASQUE · HTTP/3", "روی QUIC (UDP)؛ کم‌پینگ‌ترین اگر باز باشد", listOf("--masque", "--h3")),
     GOOL("Gool", "WireGuard داخل MASQUE؛ دو لایه", listOf("--gool")),
-    MIM("MASQUE در MASQUE", "دو تونل تو در تو؛ سخت‌ترین برای فیلتر، کندتر", listOf("--mim")),
-    WIREGUARD("WireGuard", "ساده و سبک؛ در ایران اغلب بسته است", listOf("--wg"));
+    MIM("MASQUE در MASQUE", "دو تونل تو در تو؛ سخت‌ترین برای فیلتر، کندتر", listOf("--mim"));
 
     companion object {
         fun of(name: String?) = entries.firstOrNull { it.name == name }
@@ -28,7 +32,7 @@ enum class IpFamily(val title: String, val value: String) {
 }
 
 data class Options(
-    val transport: Transport = Transport.MASQUE_H2,
+    val transport: Transport = Transport.AMNEZIA,
     val scan: Scan = Scan.TURBO,
     val ip: IpFamily = IpFamily.V4,
     val fragment: Boolean = true,
@@ -63,7 +67,7 @@ data class Options(
             return try {
                 val j = JSONObject(raw)
                 Options(
-                    transport = Transport.of(j.optString("transport")) ?: Transport.MASQUE_H2,
+                    transport = Transport.of(j.optString("transport")) ?: Transport.AMNEZIA,
                     scan = Scan.entries.firstOrNull { it.name == j.optString("scan") } ?: Scan.TURBO,
                     ip = IpFamily.entries.firstOrNull { it.name == j.optString("ip") } ?: IpFamily.V4,
                     fragment = j.optBoolean("fragment", true),
@@ -76,7 +80,7 @@ data class Options(
 
         /** Order tried after the user's choice: what survives a hostile network first. */
         val RANKING = listOf(
-            Transport.MASQUE_H2, Transport.GOOL, Transport.MASQUE_H3, Transport.MIM, Transport.WIREGUARD
+            Transport.AMNEZIA, Transport.MASQUE_H2, Transport.WIREGUARD, Transport.GOOL, Transport.MASQUE_H3, Transport.MIM
         )
 
         /**
