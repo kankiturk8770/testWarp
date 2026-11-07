@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.kankipro.warp.core.ConnState
 import cafe.kankipro.warp.core.Engine
+import cafe.kankipro.warp.core.GameEngine
+import cafe.kankipro.warp.core.PinScan
 import cafe.kankipro.warp.core.IpFamily
 import cafe.kankipro.warp.core.Options
 import cafe.kankipro.warp.core.Phase
@@ -132,7 +135,14 @@ private fun Home(options: Options, onOptions: (Options) -> Unit, onToggle: () ->
         Spacer(Modifier.height(16.dp))
         StageRow(s)
         Spacer(Modifier.height(24.dp))
-        if (s.phase == Phase.RUNNING) Facts(s) else TransportPicker(options, s.phase == Phase.IDLE || s.phase == Phase.ERROR, onOptions)
+        if (s.phase == Phase.RUNNING) {
+            Facts(s)
+        } else {
+            val free = s.phase == Phase.IDLE || s.phase == Phase.ERROR
+            ModeSwitch(options.gamer, free) { onOptions(options.copy(gamer = it)) }
+            Spacer(Modifier.height(16.dp))
+            if (options.gamer) GamerPanel(options, free, onOptions) else TransportPicker(options, free, onOptions)
+        }
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -147,7 +157,7 @@ private fun Headline(s: ConnState) {
         Phase.IDLE -> "وصل نیستی"
     }
     val sub = when (s.phase) {
-        Phase.RUNNING -> s.transport?.title.orEmpty()
+        Phase.RUNNING -> s.transport?.title.orEmpty() + if (s.gamer) " · گیمر" else ""
         Phase.CONNECTING -> s.message
         Phase.ERROR -> s.error.orEmpty()
         else -> "دکمه را بزن؛ اولین بار یک اکانت رایگان WARP ساخته می‌شود."
@@ -218,30 +228,136 @@ private fun Fact(label: String, value: String, ltr: Boolean = false, last: Boole
     if (!last) Box(Modifier.fillMaxWidth().height(1.dp).background(K.wineLine))
 }
 
+/** «کاربر عادی» or «کاربر گیمر»: the two ways of connecting, one tap apart. */
+@Composable
+private fun ModeSwitch(gamer: Boolean, enabled: Boolean, onPick: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(K.wine).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        listOf(false to "کاربر عادی", true to "کاربر گیمر 🎮").forEach { (g, name) ->
+            val on = g == gamer
+            Box(
+                Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (on) K.gold else Color.Transparent)
+                    .clickable(enabled = enabled) { onPick(g) },
+                contentAlignment = Alignment.Center,
+            ) { Text(name, style = T.strong, color = if (on) K.night else K.champagne) }
+        }
+    }
+}
+
 @Composable
 private fun TransportPicker(options: Options, enabled: Boolean, onOptions: (Options) -> Unit) {
+    val ctx = LocalContext.current
+    val latest by rememberUpdatedState(options)
+    val scan by PinScan.state.collectAsState()
     Column(Modifier.fillMaxWidth()) {
         Text("راه رسیدن به کلادفلر", style = T.strong, color = K.champagne)
         Spacer(Modifier.height(4.dp))
         Text(
-            if (options.autoFallback) "اگر این یکی جواب نداد، دو پروتکل دیگر خودکار امتحان می‌شود."
+            if (options.autoFallback) "اگر این یکی جواب نداد، دو پروتکل دیگر خودکار امتحان می‌شود. «آی‌پی سفید» بین آدرس‌های کلادفلر می‌گردد و یکی که از این شبکه جواب بدهد را می‌گذارد."
             else "فقط همین پروتکل امتحان می‌شود.",
             style = T.small, color = K.rose,
         )
         Spacer(Modifier.height(12.dp))
         Transport.entries.forEach { t ->
             val on = t == options.transport
-            Row(
+            val pin = options.pins[t]
+            Column(
                 Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp))
                     .border(1.dp, if (on) K.gold else K.wineLine, RoundedCornerShape(16.dp))
                     .background(if (on) K.wine else Color.Transparent)
                     .clickable(enabled = enabled) { onOptions(options.copy(transport = t)) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(t.title, style = T.strong, color = if (on) K.gold else K.champagne)
+                        Text(t.hint, style = T.small, color = K.rose)
+                    }
+                    Box(
+                        Modifier.size(18.dp).clip(CircleShape)
+                            .border(2.dp, if (on) K.gold else K.wineLine, CircleShape)
+                            .padding(4.dp).clip(CircleShape).background(if (on) K.gold else Color.Transparent)
+                    )
+                }
+                if (PinScan.canScan(t)) {
+                    Spacer(Modifier.height(8.dp))
+                    val mine = scan.transport == t
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        when {
+                            mine && scan.running -> Text(
+                                "در حال گشتن: ${fa(scan.done)} از ${fa(scan.total)} · ${fa(scan.found)} جواب",
+                                style = T.small, color = K.gold, modifier = Modifier.weight(1f),
+                            )
+                            pin != null -> Text("آی‌پی ثابت: $pin", style = T.small.copy(textDirection = TextDirection.Ltr),
+                                color = K.champagne, modifier = Modifier.weight(1f))
+                            else -> Text("دروازه را خود هسته پیدا می‌کند", style = T.small, color = K.rose, modifier = Modifier.weight(1f))
+                        }
+                        if (pin != null && !(mine && scan.running)) {
+                            SmallButton("حذف", K.rose, enabled) { onOptions(options.copy(pins = options.pins - t)) }
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        if (mine && scan.running) {
+                            SmallButton("توقف", K.ember, true) { PinScan.cancel() }
+                        } else {
+                            SmallButton("آی‌پی سفید", K.gold, enabled && !scan.running) {
+                                PinScan.start(ctx, t) { ep -> onOptions(latest.copy(pins = latest.pins + (t to ep))) }
+                            }
+                        }
+                    }
+                    if (mine && !scan.running && scan.result != null) {
+                        Text(scan.result!!, style = T.small, color = if (scan.found > 0) K.gold else K.ember)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmallButton(text: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(10.dp)).border(1.dp, if (enabled) color else K.wineLine, RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick).heightIn(min = 36.dp).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, style = T.small, color = if (enabled) color else K.rose) }
+}
+
+/**
+ * «کاربر گیمر»: Amnezia or WireGuard straight on the phone (no layer in between), and the scan
+ * that finds this network's best paths by ping, jitter and loss.
+ */
+@Composable
+private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) -> Unit) {
+    val ctx = LocalContext.current
+    val scan by GameEngine.scan.collectAsState()
+    LaunchedEffect(Unit) { GameEngine.loadSaved(ctx) }
+    Column(Modifier.fillMaxWidth()) {
+        Text("حالت بازی", style = T.strong, color = K.champagne)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Amnezia یا WireGuard مستقیم روی گوشی، بدون هیچ لایه‌ی اضافه؛ بسته‌ی بازی کوتاه‌ترین راه را می‌رود.",
+            style = T.small, color = K.rose,
+        )
+        Spacer(Modifier.height(12.dp))
+        listOf(
+            Transport.AMNEZIA to "با پوشش Amnezia؛ وقتی WireGuard ساده بسته است",
+            Transport.WIREGUARD to "بی‌پوشش؛ سبک‌ترین، اگر باز باشد",
+        ).forEach { (t, hint) ->
+            val on = t == options.gameTransport
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, if (on) K.gold else K.wineLine, RoundedCornerShape(16.dp))
+                    .background(if (on) K.wine else Color.Transparent)
+                    .clickable(enabled = enabled) { onOptions(options.copy(gameTransport = t)) }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(t.title, style = T.strong, color = if (on) K.gold else K.champagne)
-                    Text(t.hint, style = T.small, color = K.rose)
+                    Text("${t.title} گیمینگ", style = T.strong, color = if (on) K.gold else K.champagne)
+                    Text(hint, style = T.small, color = K.rose)
                 }
                 Box(
                     Modifier.size(18.dp).clip(CircleShape)
@@ -250,7 +366,64 @@ private fun TransportPicker(options: Options, enabled: Boolean, onOptions: (Opti
                 )
             }
         }
+        Spacer(Modifier.height(20.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("بهترین مسیر برای بازی", style = T.strong, color = K.champagne)
+                Text(
+                    "شبکه: " + scan.network.removePrefix("cell:").replace("wifi", "وای‌فای").ifBlank { "—" },
+                    style = T.small, color = K.rose,
+                )
+            }
+            SmallButton(if (scan.running) "در حال اسکن…" else "اسکن", K.gold, enabled && !scan.running) {
+                GameEngine.startScan(ctx, options.gameTransport)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        if (scan.running) {
+            Text(
+                "${fa(scan.done)} از ${fa(scan.total)} · ${fa(scan.found)} دروازه جواب داد",
+                style = T.small, color = K.gold,
+            )
+        }
+        scan.error?.let { Text(it, style = T.small, color = K.ember) }
+        if (scan.hits.isEmpty() && !scan.running) {
+            Text(
+                "هنوز اسکن نشده. «اسکن» را بزن؛ آدرس‌ها و پورت‌های WireGuard کلادفلر امتحان می‌شوند و بهترین‌ها به ترتیب امتیاز (پینگ + لرزش×۳ + افت×۲۰) می‌آیند.",
+                style = T.small, color = K.rose,
+            )
+        }
+        scan.hits.forEachIndexed { i, h ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (i == 0) K.wine else Color.Transparent)
+                    .border(1.dp, if (i == 0) K.gold else K.wineLine, RoundedCornerShape(12.dp))
+                    .clickable(enabled = enabled && !scan.running) { GameEngine.pick(ctx, h) }
+                    .heightIn(min = 44.dp).padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(if (i == 0) "★" else fa(i + 1), style = T.strong, color = if (i == 0) K.gold else K.rose)
+                Spacer(Modifier.width(10.dp))
+                Text(h.endpoint, style = T.strong.copy(textDirection = TextDirection.Ltr), color = K.champagne,
+                    modifier = Modifier.weight(1f))
+                Text(
+                    "${fa(h.pingMs)}ms · لرزش ${fa(h.jitterMs)} · افت ${fa(h.lossPct)}٪",
+                    style = T.small, color = scoreColor(h.score),
+                )
+            }
+        }
+        if (scan.hits.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text("★ همان است که وصل می‌شود؛ روی هر کدام بزنی، آن ★ می‌شود. محل خروج بعد از وصل شدن نوشته می‌شود.",
+                style = T.small, color = K.rose)
+        }
     }
+}
+
+private fun scoreColor(score: Int) = when {
+    score < 120 -> K.gold
+    score < 250 -> K.champagne
+    else -> K.ember
 }
 
 // ------------------------------------------------------------ settings

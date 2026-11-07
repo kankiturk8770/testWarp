@@ -32,13 +32,13 @@ class ShotsTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
     private val out = File(System.getProperty("user.dir") ?: ".", "build/shots").apply { mkdirs() }
 
-    private fun shot(name: String, state: ConnState, tab: Tab = Tab.HOME) {
+    private fun shot(name: String, state: ConnState, tab: Tab = Tab.HOME, options: Options = Options()) {
         Engine.update { state }
         rule.mainClock.autoAdvance = false
         rule.setContent {
             KankiTheme {
                 Box(Modifier.fillMaxSize().background(K.night)) {
-                    App(Options(), {}, {}, {}, initialTab = tab)
+                    App(options, {}, {}, {}, initialTab = tab)
                 }
             }
         }
@@ -70,6 +70,17 @@ class ShotsTest {
         "4-error",
         ConnState(phase = Phase.ERROR, proven = 1, error = "هیچ‌کدام از پروتکل‌ها جواب نداد. گزارش را ببین یا پروتکل دیگری امتحان کن."),
     )
+
+    @Test fun gamer() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val net = cafe.kankipro.warp.core.GameEngine.networkKey(ctx)
+        cafe.kankipro.warp.core.Prefs.saveGameHits(ctx, net, listOf(
+            cafe.kankipro.warp.core.WgScan.Hit("188.114.97.3:4500", 48, 3, 0),
+            cafe.kankipro.warp.core.WgScan.Hit("162.159.192.7:2408", 61, 6, 0),
+            cafe.kankipro.warp.core.WgScan.Hit("162.159.195.40:1701", 95, 22, 10),
+        ))
+        shot("7-gamer", ConnState(), options = Options(gamer = true))
+    }
 
     @Test fun settings() = shot("5-settings", ConnState(), Tab.SETTINGS)
 

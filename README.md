@@ -4,8 +4,8 @@
 دروازه‌های کلادفلر بیرون می‌رود. ایده و مسیر اتصال از پروژه‌ی [RIX-AETHER](https://github.com/RIX-REZA/RIX-AETHER) گرفته شده؛
 هسته همان [Aether](https://github.com/CluvexStudio/Aether) است (Rust) که CI از سورس می‌سازد. کد برنامه مال خود ماست.
 
-## تازه‌های نسخه 0.1.0
-اولین نسخه: اتصال کامل (اکانت، دروازه، MASQUE/WireGuard، تونل گوشی، تأیید واقعی)، صفحه‌ی اتصال، تنظیمات و گزارش.
+## تازه‌های نسخه 0.3.0
+دو حالت «کاربر عادی» و «کاربر گیمر»: گیمر با Amnezia/WireGuard مستقیم روی گوشی و اسکن بهترین مسیر بازی؛ عادی با «آی‌پی سفید» برای هر پروتکل.
 
 ## مسیر اتصال، از ۰ تا ۱۰۰
 ```
@@ -32,6 +32,8 @@
 | تأیید واقعی تونل | `core/Probe.kt` |
 | پروتکل‌ها و تنظیمات | `core/Options.kt`، `core/Prefs.kt` |
 | پل C (بارگذاری کتابخانه‌ها، گزارش هسته) | `app/src/main/cpp/bridge.c` |
+| حالت گیمر: Amnezia/WireGuard مستقیم روی TUN | `core/GameEngine.kt`، `core/WarpWg.kt` |
+| اسکن دروازه‌ها (گیمر و آی‌پی سفید) | `core/WgScan.kt` (با `WgHello.kt`، `Crypto.kt`)، `core/H2Scan.kt`، `core/PinScan.kt` |
 | ظاهر | `ui/Theme.kt`، `ui/Portal.kt` (دکمه‌ی حلقه‌ای)، `ui/Screens.kt` |
 | ساخت (هسته، hev، APK، تلگرام) | `.github/workflows/build.yml` |
 

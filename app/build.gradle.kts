@@ -13,8 +13,8 @@ android {
         applicationId = "cafe.kankipro.warp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.3.0"
         // Only arm64: building the Rust core takes ~40 minutes per ABI in CI.
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=none" } }
@@ -68,6 +68,8 @@ android {
 }
 
 dependencies {
+    // AmneziaWG engine for the gamer mode: WireGuard straight on the TUN, no tun2socks or SOCKS in between
+    implementation("com.zaneschepke:amneziawg-android:2.3.7")
     val composeBom = platform("androidx.compose:compose-bom:2025.02.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

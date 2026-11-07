@@ -39,6 +39,11 @@ data class Options(
     val autoFallback: Boolean = true,
     val mtu: Int = 1500,
     val port: Int = 1819,
+    /** Normal mode: a gateway the white-list scan found for a transport, used instead of the core's own scan. */
+    val pins: Map<Transport, String> = emptyMap(),
+    /** «کاربر گیمر»: Amnezia/WireGuard straight on the TUN (GameEngine) instead of the core. */
+    val gamer: Boolean = false,
+    val gameTransport: Transport = Transport.AMNEZIA,
 ) {
     /** The core's arguments: one SOCKS5 listener on the loopback, identity kept in [configPath]. */
     fun toArgs(configPath: String): List<String> = buildList {
@@ -51,6 +56,13 @@ data class Options(
         if (fragment) add("--fragment")
         // Reuse the gateway that worked last time without rescanning, when it still answers.
         add("--quick-reconnect")
+        pins[transport]?.let { pin ->
+            when (transport) {
+                Transport.AMNEZIA, Transport.WIREGUARD -> { add("--wg-peer"); add(pin) }
+                Transport.MASQUE_H2, Transport.MASQUE_H3 -> { add("--peer"); add(pin) }
+                else -> Unit
+            }
+        }
     }
 
     fun toJson(): String = JSONObject()
@@ -59,6 +71,9 @@ data class Options(
         .put("ip", ip.name)
         .put("fragment", fragment)
         .put("autoFallback", autoFallback)
+        .put("pins", JSONObject().apply { pins.forEach { (t, v) -> put(t.name, v) } })
+        .put("gamer", gamer)
+        .put("gameTransport", gameTransport.name)
         .toString()
 
     companion object {
@@ -72,6 +87,13 @@ data class Options(
                     ip = IpFamily.entries.firstOrNull { it.name == j.optString("ip") } ?: IpFamily.V4,
                     fragment = j.optBoolean("fragment", true),
                     autoFallback = j.optBoolean("autoFallback", true),
+                    pins = j.optJSONObject("pins")?.let { o ->
+                        o.keys().asSequence().mapNotNull { k -> Transport.of(k)?.let { it to o.optString(k) } }
+                            .filter { it.second.isNotBlank() }.toMap()
+                    } ?: emptyMap(),
+                    gamer = j.optBoolean("gamer", false),
+                    gameTransport = Transport.of(j.optString("gameTransport"))
+                        ?.takeIf { it == Transport.AMNEZIA || it == Transport.WIREGUARD } ?: Transport.AMNEZIA,
                 )
             } catch (_: Exception) {
                 Options()

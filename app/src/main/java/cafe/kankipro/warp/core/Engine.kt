@@ -43,6 +43,8 @@ data class ConnState(
     val egress: Probe.Egress? = null,
     val gateway: String = "",
     val startedAt: Long = 0,
+    /** This connection is the gamer mode's (GameEngine), not the core's (WarpService). */
+    val gamer: Boolean = false,
 )
 
 /** Traffic counters on their own flow: they tick every second and must not redraw the screen. */
@@ -427,6 +429,10 @@ object Engine {
         _traffic.value = Traffic(up, down, (up - lastUp).coerceAtLeast(0), (down - lastDown).coerceAtLeast(0))
         lastUp = up
         lastDown = down
+    }
+
+    fun setTraffic(t: Traffic) {
+        _traffic.value = t
     }
 
     fun resetStats() {

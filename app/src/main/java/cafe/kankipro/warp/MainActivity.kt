@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import cafe.kankipro.warp.core.Engine
+import cafe.kankipro.warp.core.GameEngine
 import cafe.kankipro.warp.core.Phase
 import cafe.kankipro.warp.core.Prefs
 import cafe.kankipro.warp.service.WarpService
@@ -28,7 +29,7 @@ import cafe.kankipro.warp.ui.KankiTheme
 
 class MainActivity : ComponentActivity() {
     private val askVpn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (VpnService.prepare(this) == null) WarpService.start(this)
+        if (VpnService.prepare(this) == null) start()
     }
     private val askNotify = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -54,13 +55,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun toggle() {
-        when (Engine.state.value.phase) {
-            Phase.RUNNING, Phase.CONNECTING -> WarpService.stop(this)
+        val s = Engine.state.value
+        when (s.phase) {
+            Phase.RUNNING, Phase.CONNECTING -> if (s.gamer) GameEngine.disconnect(this) else WarpService.stop(this)
             Phase.STOPPING -> Unit
             else -> {
                 val ask = VpnService.prepare(this)
-                if (ask != null) askVpn.launch(ask) else WarpService.start(this)
+                if (ask != null) askVpn.launch(ask) else start()
             }
         }
+    }
+
+    /** The mode picked on the home screen decides the engine: the core (normal) or straight WireGuard (gamer). */
+    private fun start() {
+        val o = Prefs.options(this)
+        if (o.gamer) GameEngine.connect(applicationContext, o.gameTransport, null) else WarpService.start(this)
     }
 }

@@ -70,6 +70,24 @@ object Probe {
         }
     }
 
+    /**
+     * The same check without SOCKS, for the gamer mode: the app itself is inside that tunnel, so a
+     * plain HTTPS request to 1.1.1.1 goes through it.
+     */
+    fun direct(timeoutMs: Int): Egress? = try {
+        val c = java.net.URL("https://1.1.1.1/cdn-cgi/trace").openConnection() as HttpsURLConnection
+        c.connectTimeout = timeoutMs
+        c.readTimeout = timeoutMs
+        c.useCaches = false
+        val started = System.nanoTime()
+        val body = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        val ms = (System.nanoTime() - started) / 1_000_000
+        c.disconnect()
+        parseTrace(body)?.copy(pingMs = ms)
+    } catch (_: Exception) {
+        null
+    }
+
     /** `key=value` lines of /cdn-cgi/trace; null without an `ip`. */
     fun parseTrace(body: String): Egress? {
         val map = body.lineSequence()

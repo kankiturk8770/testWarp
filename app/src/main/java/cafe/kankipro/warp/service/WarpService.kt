@@ -64,7 +64,7 @@ class WarpService : VpnService() {
         fun alive() = session.get() == mine
         Engine.resetStats()
         Engine.update { it.copy(phase = Phase.CONNECTING, proven = 0, error = null, egress = null,
-            gateway = "", message = "آماده کردن تونل گوشی…") }
+            gateway = "", message = "آماده کردن تونل گوشی…", gamer = false) }
         try {
             val fd = openTun(options)
             val chain = Options.chain(options, Prefs.lastGood(this))
