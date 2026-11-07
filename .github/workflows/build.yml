@@ -1,0 +1,166 @@
+name: Kanki Warp build
+
+# One job (the account's Artifacts storage is full, so nothing is passed between jobs):
+#   1. the Aether core (Rust: WARP account, gateway scan, MASQUE/WireGuard, SOCKS5) -> libaether.so
+#   2. hev-socks5-tunnel (TUN -> SOCKS5)                                          -> libhev-socks5-tunnel.so
+#   3. the app (Kotlin + our JNI bridge)                                          -> APK
+#   4. the APK goes to Releases and, on main, to Telegram
+# Steps 1-2 take ~40 minutes the first time; their output is cached by version and reused.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  AETHER_REPO: https://github.com/CluvexStudio/Aether
+  # Fixed commit, so every build uses the core that was tested. To update: put a newer commit here.
+  AETHER_REF: 9ebdcc945af12ea532b32119884f846bdb9c4bfc
+  HEV_TAG: "2.19.3"
+  NDK_VERSION: "26.3.11579264"
+  ABI: arm64-v8a
+  RUST_TARGET: aarch64-linux-android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK and NDK
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMGR=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" "platforms;android-36" "build-tools;35.0.0" "cmake;3.22.1" "ndk;${NDK_VERSION}" >/dev/null
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "NDK=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Cached native libraries
+        id: native
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/jniLibs/${{ env.ABI }}
+          key: native-${{ env.ABI }}-aether-${{ env.AETHER_REF }}-hev-${{ env.HEV_TAG }}-ndk-${{ env.NDK_VERSION }}-v1
+
+      # ------------------------------------------------------------ Aether core
+      - name: Rust
+        if: steps.native.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.RUST_TARGET }}
+
+      - name: Go, CMake, Ninja (BoringSSL build)
+        if: steps.native.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ninja-build cmake perl
+          go version || true
+          cargo install cargo-ndk --locked
+
+      - name: Fetch Aether
+        if: steps.native.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git init -q aether-src
+          git -C aether-src fetch -q --depth 1 "$AETHER_REPO" "$AETHER_REF"
+          git -C aether-src checkout -q FETCH_HEAD
+          git -C aether-src log -1 --format='aether %h %cd'
+          test -f aether-src/quiche/quiche/Cargo.toml
+
+      - name: Rust cache
+        if: steps.native.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "aether-src/aether -> target"
+          key: ${{ env.ABI }}
+
+      - name: Build libaether.so
+        if: steps.native.outputs.cache-hit != 'true'
+        env:
+          CARGO_PROFILE_RELEASE_LTO: thin
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "2"
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="$NDK" ANDROID_NDK_ROOT="$NDK"
+          under=$(echo "$RUST_TARGET" | tr '-' '_')
+          export "BORING_BSSL_RUST_CPPLIB_${under}=static:-bundle=c++"
+          cd aether-src/aether
+          cargo ndk -t "$ABI" --platform 29 build --release --lib
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/$ABI"
+          cp "target/$RUST_TARGET/release/libaether.so" "$GITHUB_WORKSPACE/app/src/main/jniLibs/$ABI/"
+
+      # --------------------------------------------------------------- tun2socks
+      - name: Build libhev-socks5-tunnel.so
+        if: steps.native.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o hev.tar.xz \
+            "https://github.com/heiher/hev-socks5-tunnel/releases/download/${HEV_TAG}/hev-socks5-tunnel-${HEV_TAG}.tar.xz"
+          tar -xJf hev.tar.xz
+          mv "hev-socks5-tunnel-${HEV_TAG}" hev-src
+          cd hev-src
+          "$NDK/ndk-build" NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk NDK_APPLICATION_MK=Application.mk \
+            APP_ABI="$ABI" APP_PLATFORM=android-29 -j"$(nproc)"
+          cp "libs/$ABI/libhev-socks5-tunnel.so" "$GITHUB_WORKSPACE/app/src/main/jniLibs/$ABI/"
+
+      - name: Native libraries
+        run: ls -la "app/src/main/jniLibs/$ABI"
+
+      # --------------------------------------------------------------------- app
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Unit tests
+        run: gradle :app:testDebugUnitTest --tests 'cafe.kankipro.warp.core.*' --stacktrace
+
+      - name: Build APK
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Check the APK carries all three libraries
+        run: |
+          set -euo pipefail
+          apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          for need in libaether.so libhev-socks5-tunnel.so libkwarp.so; do
+            unzip -l "$apk" | grep -q "lib/$ABI/$need" || { echo "::error::$need is missing from the APK"; exit 1; }
+          done
+          ver=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          mkdir -p out && cp "$apk" "out/KankiWarp-$ver-arm64.apk"
+          ls -la out
+
+      - name: Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="build-${GITHUB_REF_NAME//\//-}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" out/*.apk --prerelease --target "$GITHUB_SHA" \
+            --title "Kanki Warp · $GITHUB_REF_NAME · #$GITHUB_RUN_NUMBER" --notes "Built from $GITHUB_SHA"
+
+      # Secrets of this repository: TG_BOT_TOKEN and TG_CHAT_ID (without them this step is skipped).
+      - name: Send the APK to Telegram
+        if: github.ref_name == 'main'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then echo "TG_BOT_TOKEN / TG_CHAT_ID not set: skipped"; exit 0; fi
+          ver=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          msg=$(awk '/^# /{c++; next} c==1' CHANGES.md | sed '/^[[:space:]]*$/d' | head -n 10 | cut -c1-800)
+          f=$(ls out/*.apk | head -1)
+          r=$(curl -sS --retry 3 --max-time 300 -F chat_id="$TG_CHAT_ID" -F document=@"$f" \
+            -F caption="🌀 Kanki Warp $ver
+          $msg" "https://api.telegram.org/bot$TG_BOT_TOKEN/sendDocument")
+          echo "$r" | head -c 300; echo
+          echo "$r" | grep -q '"ok":true'

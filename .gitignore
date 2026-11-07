@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.cxx/
+.externalNativeBuild/
+# built in CI, never committed
+app/src/main/jniLibs/
+aether-src/
+hev-src/

@@ -1,0 +1,10 @@
+Kanki Warp — a personal WARP client for Android.
+
+It loads, unmodified, libraries built from:
+  * Aether (Rust WARP / MASQUE core) by CluvexStudio — https://github.com/CluvexStudio/Aether (AGPL-3.0)
+  * hev-socks5-tunnel by heiher — https://github.com/heiher/hev-socks5-tunnel (MIT)
+The connection flow (stages, transport fallback, the real-traffic check) follows the design of
+RIX-AETHER by REZA-RIX — https://github.com/RIX-REZA/RIX-AETHER (AGPL-3.0). The code here is our own.
+
+Because it uses the AGPL core, this project is licensed AGPL-3.0-only (see LICENSE).
+Cloudflare and WARP are trademarks of Cloudflare, Inc.; this app is not made or endorsed by Cloudflare.
