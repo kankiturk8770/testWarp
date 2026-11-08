@@ -209,10 +209,23 @@ object GameEngine {
                 if (tries.isEmpty()) error("هیچ دروازه‌ای از این شبکه جواب نداد؛ «اسکن» را بزن")
                 var egress: Probe.Egress? = null
                 var used = ""
+                // Zero Trust first when the user joined a team; if no gateway passes with it, the
+                // personal WARP account goes through the same gateways again, as before.
+                val team = ZeroTrust.team(ctx)
+                val accounts = listOfNotNull(ZeroTrust.identity(ctx)?.let { it to "Zero Trust ($team)" }) + (id to "")
+                var via = ""
+                for ((acct, label) in accounts) {
+                if (egress != null) break
+                if (label.isNotEmpty()) Engine.note("game: trying $label first")
+                else if (accounts.size > 1) Engine.note("game: Zero Trust did not pass; back to personal WARP")
                 for ((n, ep) in tries.withIndex()) {
                     Engine.update { it.copy(gateway = ep, proven = 1, attempt = n + 1, attempts = tries.size,
-                        message = if (n == 0) "روشن کردن موتور بازی…" else "دروازه‌ی قبلی رد شد؛ امتحان $ep…") }
-                    up(ctx, id.config(ep, transport == Transport.AMNEZIA, dns = Prefs.options(ctx).dns.servers))
+                        message = when {
+                            n == 0 && label.isNotEmpty() -> "روشن کردن موتور بازی با Zero Trust…"
+                            n == 0 -> "روشن کردن موتور بازی…"
+                            else -> "دروازه‌ی قبلی رد شد؛ امتحان $ep…"
+                        }) }
+                    up(ctx, acct.config(ep, transport == Transport.AMNEZIA, dns = Prefs.options(ctx).dns.servers))
                     Engine.update { it.copy(proven = 2, message = "دست دادن با کلادفلر…") }
                     // Gateway proven = data came back from it; internet proven = a real request answered.
                     val deadline = SystemClock.elapsedRealtime() + 9_000
@@ -221,9 +234,10 @@ object GameEngine {
                         egress = Probe.direct(2500)
                         if (egress == null) delay(300)
                     }
-                    if (egress != null) { used = ep; break }
+                    if (egress != null) { used = ep; via = label; break }
                     Engine.note("game: $ep did not pass the tunnel test")
                     runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
+                }
                 }
                 val out0 = egress ?: error("هیچ‌کدام از ${tries.size} دروازه از داخل تونل جواب نداد؛ دوباره «اسکن» بزن")
                 val out = out0.copy(pingMs = Probe.dnsPing() ?: out0.pingMs)
@@ -236,7 +250,7 @@ object GameEngine {
                     took == "full" -> "Amnezia · پوشش کامل (امضای I1–I4 + آشغال)"
                     took == "without I1..I3" -> "Amnezia · فقط بسته‌ی آشغال (موتور امضاها را نپذیرفت)"
                     else -> "WireGuard ساده: موتور پوشش Amnezia را نپذیرفت"
-                }
+                } + (if (via.isNotEmpty()) " · $via" else "")
                 Engine.note("game: verified $ep: ${out.ip} ${out.colo}")
                 Engine.note("✓ وصل با: $actual")
                 Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "", egress = out, actual = actual,

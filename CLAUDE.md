@@ -20,6 +20,11 @@
 فقط اسم فایل، کد، دستور و اسم پروتکل‌ها انگلیسی می‌ماند. صاحب پروژه دارد برنامه‌نویسی یاد می‌گیرد: جواب‌ها کوتاه و ساده.
 
 ## گزارش کارها
+- 2026-11-08 — نسخه‌ی 0.8.0: Zero Trust در تنظیمات گیمر (خواست صاحب پروژه: کد، ثبت، حذف هر وقت، اگر کار نکرد WARP مثل قبل). چه شد: سه تابع تیم هسته
+  (`aether_team_code_request`، `_code_submit`، `_session_free`) در `bridge.c` (اختیاری: هسته‌ی بی آن‌ها هم بار می‌شود) و `Native`، `ZeroTrust.kt` (کد ایمیل،
+  بعد `Engine.registerSet(... "wg", --team, --access-token)` که `identity-team-<تیم>.toml` می‌سازد؛ توکن فقط در حافظه‌ی هسته)، `GameEngine.connect` اول تیم بعد WARP،
+  `ui/ZeroTrustCard.kt`. CI 0.7.0 قرمز شد چون سورس Psiphon داخل پروژه بود و `setup-gradle` wrapper نمونه‌هایش را رد کرد ← حالا در `$RUNNER_TEMP`.
+  **دانستنی:** اسکن گیمر هنوز با اکانت شخصی است (دروازه‌ها برای هر دو یکی‌اند). تست: ۱۵ تست + ۱۰ عکس. روی گوشی هنوز نه.
 - 2026-11-08 — نسخه‌ی 0.7.0: صاحب پروژه خواست Psiphon برای کاربر عادی در «شرایط خیلی خیلی سخت» (گیمر روی WARP می‌ماند). چه شد: `Transport.PSIPHON`
   (`--psiphon-only`)، `Engine.startCore` با `--psiphon-bin` (`nativeLibraryDir/libpsiphon.so`) و `--psiphon-dir`، `Options.psiphonRegion`، مرحله‌ی چهارم
   `Options.IRAN`، وقت ۱۲۰ ثانیه، ساخت در CI (فورک `CluvexStudio/psiphon-tunnel-core`، برنچ `shirokhorshid`، همان commit اسکریپت Aether؛ Go استاتیک

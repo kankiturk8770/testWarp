@@ -161,4 +161,9 @@ class CoreTest {
         assertTrue("--psiphon-region" !in Options(transport = Transport.WIREGUARD, psiphonRegion = "DE").toArgs("/x/i.toml"))
         assertEquals("DE", Options.fromJson(Options(psiphonRegion = "DE").toJson()).psiphonRegion)
     }
+
+    @Test fun zeroTrustTeamNameIsWhatTheCoreWrites() {
+        assertEquals("myteam", ZeroTrust.normalize(" https://MyTeam.cloudflareaccess.com/ "))
+        assertEquals("my-team", ZeroTrust.normalize("my-team"))
+    }
 }

@@ -76,10 +76,12 @@ data class WarpWg(
         )
 
         /** Reads the WireGuard identity; null until the core has registered one. */
-        fun load(ctx: Context): WarpWg? {
-            val f = File(File(ctx.filesDir, "warp"), "identity.toml")
+        fun load(ctx: Context): WarpWg? = load(File(File(ctx.filesDir, "warp"), "identity.toml"))
+
+        /** Any identity file the core wrote, the Zero Trust team's one included. */
+        fun load(f: File): WarpWg? {
             if (!f.isFile) return null
-            return parse(f.readText())
+            return runCatching { parse(f.readText()) }.getOrNull()
         }
 
         fun parse(toml: String): WarpWg? {

@@ -514,14 +514,14 @@ private fun RadarButton(busy: Boolean, enabled: Boolean, tint: Color, onClick: (
 }
 
 @Composable
-private fun Badge(text: String, color: Color) {
+internal fun Badge(text: String, color: Color) {
     Box(
         Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 1.dp)
     ) { Text(text, style = T.small.copy(textDirection = TextDirection.Ltr, fontSize = 11.sp), color = color, maxLines = 1) }
 }
 
 @Composable
-private fun SmallButton(text: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
+internal fun SmallButton(text: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, if (enabled) color else K.wineLine, RoundedCornerShape(16.dp))
             .clickable(enabled = enabled, onClick = onClick).heightIn(min = 32.dp).padding(horizontal = 12.dp),
@@ -682,12 +682,13 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
         Section("پیدا کردن گره") { Choice(Scan.entries, options.scan, { it.title }, !locked) { onOptions(options.copy(scan = it)) } }
         Section("نوع آی‌پی") { Choice(IpFamily.entries, options.ip, { it.title }, !locked) { onOptions(options.copy(ip = it)) } }
         Section("DNS") { Choice(Dns.entries, options.dns, { it.title }, !locked) { onOptions(options.copy(dns = it)) } }
-        Section("کشور خروج Psiphon") {
+        if (!options.gamer) Section("کشور خروج Psiphon") {
             Choice(PSIPHON_REGIONS, PSIPHON_REGIONS.firstOrNull { it.first == options.psiphonRegion } ?: PSIPHON_REGIONS[0],
                 { it.second }, !locked) { onOptions(options.copy(psiphonRegion = it.first)) }
         }
         Toggle("تکه‌تکه کردن دست‌دادن", options.fragment, !locked) { onOptions(options.copy(fragment = it)) }
         Toggle("پروتکل جایگزین خودکار", options.autoFallback, !locked) { onOptions(options.copy(autoFallback = it)) }
+        if (options.gamer) ZeroTrustCard(locked)
         Spacer(Modifier.height(8.dp))
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(K.wine)

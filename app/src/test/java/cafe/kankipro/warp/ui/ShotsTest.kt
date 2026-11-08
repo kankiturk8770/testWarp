@@ -101,6 +101,8 @@ class ShotsTest {
 
     @Test fun settings() = shot("5-settings", ConnState(), Tab.SETTINGS)
 
+    @Test fun gamerSettings() = shot("5b-gamer-settings", ConnState(), Tab.SETTINGS, Options(gamer = true))
+
     @Test fun log() {
         Engine.clearLog()
         listOf("try 1/3: MASQUE · HTTP/2", "17:20:01 [+] loaded existing masque identity",

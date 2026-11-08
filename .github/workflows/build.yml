@@ -137,10 +137,12 @@ jobs:
         if: steps.psiphon.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          git clone --quiet --depth 50 --branch shirokhorshid "$PSIPHON_REPO" psiphon-src
-          git -C psiphon-src checkout --quiet "$PSIPHON_REF"
+          # outside the workspace: its sample apps carry Gradle wrappers that setup-gradle refuses
+          src="$RUNNER_TEMP/psiphon-src"
+          git clone --quiet --depth 50 --branch shirokhorshid "$PSIPHON_REPO" "$src"
+          git -C "$src" checkout --quiet "$PSIPHON_REF"
           mkdir -p psiphon-out
-          cd psiphon-src
+          cd "$src"
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 GOFLAGS=-mod=vendor \
             go build -trimpath -ldflags "-s -w" -o "$GITHUB_WORKSPACE/psiphon-out/libpsiphon.so" ./ConsoleClient
 

@@ -179,21 +179,35 @@ object Engine {
      * from connecting, so a slow API (from Iran it goes through fronted addresses and retries)
      * is never cut short by the time a connection attempt gets. Null on success, else the reason.
      */
-    suspend fun register(ctx: Context, transport: Transport, timeoutMs: Long = 240_000): String? =
+    suspend fun register(ctx: Context, transport: Transport, timeoutMs: Long = 240_000): String? {
+        if (hasIdentity(ctx, transport)) return null
+        val set = when (transport) {
+            Transport.MASQUE_H2, Transport.MASQUE_H3 -> "masque"
+            Transport.GOOL -> "gool"
+            Transport.MIM -> "mim"
+            Transport.PSIPHON -> return null
+            Transport.WIREGUARD, Transport.AMNEZIA -> "wg"
+        }
+        return registerSet(ctx, set, emptyList(), timeoutMs) { hasIdentity(ctx, transport) }
+    }
+
+    /**
+     * Runs the core's `--register [set]` with [extra] arguments (a Zero Trust team, say) until
+     * [ready] holds or the core ends. Null on success, else the reason.
+     */
+    suspend fun registerSet(
+        ctx: Context,
+        set: String,
+        extra: List<String>,
+        timeoutMs: Long = 240_000,
+        ready: () -> Boolean,
+    ): String? =
         withContext(Dispatchers.IO) {
-            if (hasIdentity(ctx, transport)) return@withContext null
             if (!Native.ensure()) return@withContext "هسته بارگذاری نشد: ${Native.loadError}"
             stopCore()
             clearCoreEnv()
-            val set = when (transport) {
-                Transport.MASQUE_H2, Transport.MASQUE_H3 -> "masque"
-                Transport.GOOL -> "gool"
-                Transport.MIM -> "mim"
-                Transport.PSIPHON -> return@withContext null
-                Transport.WIREGUARD, Transport.AMNEZIA -> "wg"
-            }
-            val args = listOf("--config", identityPath(ctx), "--log-level", "info", "--register", set)
-            note("register: ${args.joinToString(" ")}")
+            val args = listOf("--config", identityPath(ctx), "--log-level", "info", "--register", set) + extra
+            note("register: ${args.joinToString(" ").replace(Regex("(--access-token )\\S+"), "$1…")}")
             val reply = JSONObject(Native.coreStart(JSONArray(args).toString()))
             if (!reply.optBoolean("ok")) return@withContext reply.optString("error", "هسته شروع نشد")
             jobId = reply.optLong("job")
@@ -205,7 +219,7 @@ object Engine {
                     stopCore()
                     pumpLog()
                     return@withContext when {
-                        hasIdentity(ctx, transport) -> null
+                        ready() -> null
                         !r.error.isNullOrBlank() -> r.error
                         else -> "اکانت ساخته نشد"
                     }
@@ -286,7 +300,7 @@ object Engine {
         "MASQUE_STARTUP_SECS MASQUE_VALIDATE_SECS MIM_INNER_PEER MIM_OUTER_PEER MIM_PEERS NOIZE PEER PERF_PROFILE " +
         "PROTOCOL PSIPHON PSIPHON_BIN PSIPHON_BIND PSIPHON_CDN_IPS PSIPHON_CDN_SETS PSIPHON_CDN_SNI PSIPHON_CONFIG " +
         "PSIPHON_DIR PSIPHON_HTTP PSIPHON_MODE PSIPHON_REGION PSIPHON_SERVER_ENTRIES QUICK_RECONNECT QUIC_V2 REGISTER " +
-        "ROUTES_FILE ROUTE_BLOCK ROUTE_DIRECT SCAN SOCKS STATS STATS_SECS TEAM TLS13_CIPHERS TLS_ALPS " +
+        "ROUTES_FILE ROUTE_BLOCK ROUTE_DIRECT SCAN SOCKS STATS STATS_SECS TEAM TEAM_ENDPOINT TLS13_CIPHERS TLS_ALPS " +
         "TLS_CERT_COMPRESSION TLS_CIPHERS TLS_GROUPS TLS_KEY_SHARES TLS_SERVER_PADDING TLS_SIGALGS TLS_TRUST_ANCHORS " +
         "TLS_VERIFY TOR TOR_BIND TOR_BRIDGES TOR_BRIDGE_FILE TOR_DIR TOR_HTTP TOR_RELAYS TOR_RELAY_PORTS UPSTREAM " +
         "WG_CONFIG WG_KEEPALIVE WG_NO_DATA_CHECK WG_NO_PROFILE_RETRY WG_PEER WG_RECONNECT_SECS WG_VALIDATE_SECS " +
