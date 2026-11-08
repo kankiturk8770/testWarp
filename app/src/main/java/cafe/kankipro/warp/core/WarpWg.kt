@@ -9,10 +9,15 @@ import java.util.Base64
  * into a plain AmneziaWG config. Used by the gamer mode (straight on the TUN, no core in between)
  * and by the WireGuard scanner.
  *
- * The headers stay plain WireGuard (H1..H4 = 1..4, written out with the disguise, the "reserved" bytes zero), as every stock
- * WireGuard client of a WARP account sends them; Cloudflare answers those in kind. The account's
- * client_id could go in those bytes ([header]), but then the answers would carry it too and a
- * mismatch drops every packet, so it is kept only for a later test.
+ * For the personal account the headers stay plain WireGuard (H1..H4 = 1..4, written out with the
+ * disguise, the "reserved" bytes zero), as every stock WireGuard client of a WARP account sends them;
+ * Cloudflare answers those in kind, and that works (checked on a phone).
+ *
+ * A Zero Trust ([team]) device is told apart by its client_id in those three "reserved" bytes of every
+ * packet: without it the handshake passes but the data goes nowhere (seen on a phone: 0 B/s). Its
+ * headers are therefore [header] of each type, written as H1..H4 (AmneziaWG reads the whole 4-byte
+ * type word, little-endian, so the bytes land where Cloudflare reads them); Cloudflare's answers carry
+ * the same bytes, so they match the same H values.
  */
 data class WarpWg(
     val privateKey: String,
@@ -20,7 +25,14 @@ data class WarpWg(
     val ipv4: String,
     val ipv6: String,
     val clientId: ByteArray,
+    /** A Zero Trust identity (identity-team-<team>.toml). */
+    val team: Boolean = false,
+    /** The gateway the organization assigned (no port), "" when none. */
+    val assigned: String = "",
 ) {
+    /** Zero Trust with a device id: every header carries it. */
+    val stamped: Boolean get() = team && clientId.size == 3
+
     /** The header word of message [type] (1 init, 2 response, 3 cookie, 4 data). */
     fun header(type: Int): Long {
         val c = clientId
@@ -54,7 +66,13 @@ data class WarpWg(
             // CreateIPCRequest) sends h1..h4 to the Go side whether given or not, empty when not, and
             // amneziawg-go cannot parse an empty header: the whole config was refused
             // (GO_ACTIVATION_ERROR_CODE). These are plain WireGuard's own types, what Cloudflare reads.
-            for (n in 1..4) appendLine("H$n = $n")
+            for (n in 1..4) appendLine("H$n = ${header0(n)}")
+        } else if (stamped) {
+            // The headers need an Amnezia config; the smallest junk keeps the engine's reader whole.
+            appendLine("Jc = 1")
+            appendLine("Jmin = 10")
+            appendLine("Jmax = 20")
+            for (n in 1..4) appendLine("H$n = ${header0(n)}")
         }
         appendLine()
         appendLine("[Peer]")
@@ -63,6 +81,13 @@ data class WarpWg(
         appendLine("Endpoint = $endpoint")
         appendLine("PersistentKeepalive = 25")
     }
+
+    /** The H value of message [n]: the client_id in it for Zero Trust, plain WireGuard otherwise. */
+    private fun header0(n: Int): Long = if (stamped) header(n) else n.toLong()
+
+    /** For Zero Trust, the organization's own gateway on WireGuard's ports, to try before any other. */
+    fun ownGateways(): List<String> =
+        if (!team || assigned.isBlank()) emptyList() else listOf(2408, 500, 1701, 4500).map { "$assigned:$it" }
 
     private fun slash(ip: String, bits: Int) = if ('/' in ip) ip else "$ip/$bits"
 
@@ -81,7 +106,7 @@ data class WarpWg(
         /** Any identity file the core wrote, the Zero Trust team's one included. */
         fun load(f: File): WarpWg? {
             if (!f.isFile) return null
-            return runCatching { parse(f.readText()) }.getOrNull()
+            return runCatching { parse(f.readText())?.copy(team = f.name.startsWith("identity-team-")) }.getOrNull()
         }
 
         fun parse(toml: String): WarpWg? {
@@ -93,7 +118,8 @@ data class WarpWg(
             val priv = kv["wg_private_key"]?.takeIf { it.isNotBlank() } ?: return null
             val peer = kv["wg_peer_public_key"]?.takeIf { it.isNotBlank() } ?: return null
             val cid = kv["client_id"]?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() } ?: ByteArray(0)
-            return WarpWg(priv, peer, kv["ipv4"].orEmpty(), kv["ipv6"].orEmpty(), cid)
+            return WarpWg(priv, peer, kv["ipv4"].orEmpty(), kv["ipv6"].orEmpty(), cid,
+                assigned = kv["assigned_endpoint"].orEmpty().substringBefore(':'))
         }
     }
 }

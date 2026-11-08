@@ -232,8 +232,11 @@ object GameEngine {
                 if (egress != null) break
                 if (label.isNotEmpty()) Engine.note("game: trying $label first")
                 else if (accounts.size > 1) Engine.note("game: Zero Trust did not pass; back to personal WARP")
-                for ((n, ep) in tries.withIndex()) {
-                    Engine.update { it.copy(gateway = ep, proven = 1, attempt = n + 1, attempts = tries.size,
+                // Zero Trust: the organization's own gateway first, then the scanned ones.
+                val list = (acct.ownGateways() + tries).distinct().take(if (acct.team) 6 else 4)
+                if (acct.team) Engine.note("game: Zero Trust gateways ${list.joinToString(" ")}; device id in the headers: ${acct.stamped}")
+                for ((n, ep) in list.withIndex()) {
+                    Engine.update { it.copy(gateway = ep, proven = 1, attempt = n + 1, attempts = list.size,
                         message = when {
                             n == 0 && label.isNotEmpty() -> "روشن کردن موتور بازی با Zero Trust…"
                             n == 0 -> "روشن کردن موتور بازی…"
