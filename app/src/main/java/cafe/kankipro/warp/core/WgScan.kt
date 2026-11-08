@@ -49,6 +49,10 @@ object WgScan {
     /** The core's own lists (wireguard.rs WG_PREFIXES_V4, WG_PORTS). */
     val PREFIXES = listOf(
         "162.159.192", "162.159.195", "188.114.96", "188.114.97", "188.114.98", "188.114.99", "162.159.193",
+        // MASQUE's ranges too (prober.rs MASQUE_CIDRS_V4): from some networks these reach other data centres
+        // (Istanbul from Turkey, where the WireGuard ranges go to Frankfurt and Milan). If they do not take
+        // WireGuard, their handshakes simply get no answer.
+        "162.159.198", "162.159.199", "162.159.196", "162.159.197", "162.159.204",
     )
     val PORTS = listOf(
         2408, 500, 1701, 4500, 854, 859, 864, 878, 880, 890, 891, 894, 903, 908, 928, 934, 939, 942,
@@ -79,7 +83,11 @@ object WgScan {
             if (ok) found++
             onProgress(done, total, found)
         }
-        val best = first.entries.sortedBy { it.value }.take(keep).map { it.key }
+        // The fastest half, plus the fastest of every range: the fastest ones usually all reach one data
+        // centre, and another range is where another city (Istanbul, say) shows up.
+        val sorted = first.entries.sortedBy { it.value }.map { it.key }
+        val perRange = sorted.groupBy { it.substringBeforeLast('.') }.values.map { it.first() }
+        val best = (sorted.take(keep / 2) + perRange + sorted).distinct().take(keep)
         if (best.isEmpty()) return@withContext emptyList()
         val rtts = HashMap<String, MutableList<Int>>()
         repeat(samples) { round ->
@@ -178,6 +186,8 @@ object WgScan {
     fun candidates(n: Int): List<String> {
         val out = LinkedHashSet<String>()
         for (p in PREFIXES) for (port in listOf(2408, 500, 1701, 4500)) out += "$p.1:$port"
+        // a few known MASQUE gateways on WireGuard's main ports
+        for (h in listOf("162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2")) for (port in listOf(2408, 500, 4500, 443)) out += "$h:$port"
         val rnd = Random(System.nanoTime())
         var guard = 0
         while (out.size < n && guard++ < n * 20) {

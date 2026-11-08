@@ -35,6 +35,9 @@ import cafe.kankipro.warp.core.Phase
 import cafe.kankipro.warp.core.Stage
 
 /**
+ * Connected, everything turns green (a glance tells anyone it is on); in gamer mode the key shows a
+ * gamepad on cyan-to-green and the halo glows slowly: game mode is on.
+ *
  * The connect button: a power key inside one ring cut into four arcs, one arc per stage of the
  * connection (engine, tunnel, edge, open internet), clockwise from the top. An arc lights when its
  * stage is proven; the one being worked on pulses; a failed one turns red. Connected, the key fills
@@ -46,8 +49,15 @@ fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
     val t = rememberInfiniteTransition(label = "reactor")
     val breath by t.animateFloat(0.15f, 0.4f, infiniteRepeatable(tween(2800), RepeatMode.Reverse), label = "breath")
     val pulse by t.animateFloat(0.3f, 1f, infiniteRepeatable(tween(650), RepeatMode.Reverse), label = "pulse")
-    val accent = if (state.gamer) K.amber else K.gold
     val running = state.phase == Phase.RUNNING
+    // Connected is green for everyone, so a glance is enough; the gamer's is cyan into green.
+    val accent = when {
+        running && state.gamer -> K.ok
+        running -> K.ok
+        state.gamer -> K.amber
+        else -> K.gold
+    }
+    val glow by t.animateFloat(0.25f, 0.5f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "glow")
     val connecting = state.phase == Phase.CONNECTING
     val failed = state.phase == Phase.ERROR
     val label = when (state.phase) {
@@ -62,7 +72,8 @@ fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
             val outer = this.size.minDimension / 2
             // halo
             val haloAlpha = when {
-                running -> 0.35f
+                running && state.gamer -> glow
+                running -> 0.32f
                 state.phase == Phase.IDLE -> breath
                 else -> 0.18f
             }
@@ -98,13 +109,16 @@ fun Portal(state: ConnState, size: Dp, onTap: () -> Unit) {
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 drawCircle(
-                    if (running) Brush.radialGradient(listOf(accent, accent.copy(alpha = 0.75f)), center, this.size.minDimension / 2)
-                    else Brush.radialGradient(listOf(K.wine, K.night), center, this.size.minDimension / 2)
+                    when {
+                        running && state.gamer -> Brush.linearGradient(listOf(K.amber, K.ok), Offset.Zero, Offset(this.size.width, this.size.height))
+                        running -> Brush.radialGradient(listOf(accent, accent.copy(alpha = 0.78f)), center, this.size.minDimension / 2)
+                        else -> Brush.radialGradient(listOf(K.wine, K.night), center, this.size.minDimension / 2)
+                    }
                 )
                 drawCircle(if (running) accent else K.wineLine, style = Stroke(1.5.dp.toPx()))
             }
             Icon(
-                Ic.power, contentDescription = null,
+                if (running && state.gamer) Ic.gamepad else Ic.power, contentDescription = null,
                 tint = when {
                     running -> K.night
                     failed -> K.ember

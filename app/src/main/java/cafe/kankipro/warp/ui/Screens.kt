@@ -277,13 +277,16 @@ private fun Status(s: ConnState, options: Options) {
         Phase.ERROR -> "وصل نشد"
         Phase.IDLE -> "آماده"
     }
-    Text(title, style = T.big.copy(fontSize = 24.sp), color = if (s.phase == Phase.ERROR) K.ember else K.champagne)
+    Text(
+        if (s.phase == Phase.RUNNING && s.gamer) "حالت بازی فعال" else title,
+        style = T.big.copy(fontSize = 24.sp),
+        color = when (s.phase) { Phase.ERROR -> K.ember; Phase.RUNNING -> K.ok; else -> K.champagne },
+    )
     when (s.phase) {
         Phase.RUNNING -> {
             var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
             LaunchedEffect(s.startedAt) { while (true) { now = SystemClock.elapsedRealtime(); delay(1000) } }
-            Text(clock(((now - s.startedAt) / 1000).coerceAtLeast(0)), style = T.mono.copy(fontSize = 18.sp),
-                color = if (s.gamer) K.amber else K.gold)
+            Text(clock(((now - s.startedAt) / 1000).coerceAtLeast(0)), style = T.mono.copy(fontSize = 18.sp), color = K.ok)
             Spacer(Modifier.height(2.dp))
             Text(destination(s.egress?.colo, s.egress?.pingMs?.toInt()) + "  ·  " + s.actual.ifBlank { s.transport?.title.orEmpty() },
                 style = T.small, color = K.rose, textAlign = TextAlign.Center)
@@ -320,7 +323,7 @@ private fun destination(colo: String?, ping: Int?): String {
 private fun Pipeline(s: ConnState) {
     val blink by rememberInfiniteTransition(label = "blink")
         .animateFloat(0.3f, 1f, infiniteRepeatable(tween(650), RepeatMode.Reverse), label = "a")
-    val accent = if (s.gamer) K.amber else K.gold
+    val accent = when { s.phase == Phase.RUNNING -> K.ok; s.gamer -> K.amber; else -> K.gold }
     val stages = Stage.entries
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 34.dp), verticalAlignment = Alignment.CenterVertically) {

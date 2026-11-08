@@ -105,7 +105,7 @@ object GameEngine {
             val disguise = transport == Transport.AMNEZIA
             // Phase 1: a wide sweep (about 1500 of WARP's ~96,000 address:port pairs), real handshakes.
             val found = runCatching {
-                WgScan.scan(id, disguise, wide = 1500, keep = 14, samples = 8) { d, t, f ->
+                WgScan.scan(id, disguise, wide = 2000, keep = 16, samples = 8) { d, t, f ->
                     _scan.value = _scan.value.copy(done = d, total = t, found = f, phase = 1)
                 }
             }.getOrElse { emptyList() }
