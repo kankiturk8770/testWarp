@@ -47,6 +47,12 @@ data class Options(
     val pinPing: Map<Transport, Int> = emptyMap(),
     /** «کاربر گیمر»: Amnezia/WireGuard straight on the TUN (GameEngine) instead of the core. */
     val gamer: Boolean = false,
+    /**
+     * «حالت ایران»: the setup the core's Android client (RIX) ships for Iran: MASQUE over HTTP/2 on TCP 443
+     * first (looks like an ordinary HTTPS site, untouched by UDP blocking), the handshake cut into
+     * 40-byte pieces 10 ms apart, a full gateway scan, then Amnezia and Gool if it does not answer.
+     */
+    val iran: Boolean = false,
     val gameTransport: Transport = Transport.AMNEZIA,
 ) {
     /** The core's arguments: one SOCKS5 listener on the loopback, identity kept in [configPath]. */
@@ -55,9 +61,10 @@ data class Options(
         add("--config"); add(configPath)
         add("--log-level"); add("info")
         addAll(transport.flags)
-        add("--scan"); add(scan.value)
+        add("--scan"); add(if (iran) Scan.THOROUGH.value else scan.value)
         add("--ip"); add(ip.value)
-        if (fragment) add("--fragment")
+        if (fragment || iran) add("--fragment")
+        if (iran) { add("--fragment-size"); add("40"); add("--fragment-delay"); add("10") }
         // Reuse the gateway that worked last time without rescanning, when it still answers; with a
         // pinned gateway nothing else is tried: the core goes to that one only and never scans.
         add(if (pins[transport] != null && pinnable) "--no-quick-reconnect" else "--quick-reconnect")
@@ -82,6 +89,7 @@ data class Options(
         .put("pins", JSONObject().apply { pins.forEach { (t, v) -> put(t.name, v) } })
         .put("pinPing", JSONObject().apply { pinPing.forEach { (t, v) -> put(t.name, v) } })
         .put("gamer", gamer)
+        .put("iran", iran)
         .put("gameTransport", gameTransport.name)
         .toString()
 
@@ -104,6 +112,7 @@ data class Options(
                         o.keys().asSequence().mapNotNull { k -> Transport.of(k)?.let { it to o.optInt(k) } }.toMap()
                     } ?: emptyMap(),
                     gamer = j.optBoolean("gamer", false),
+                    iran = j.optBoolean("iran", false),
                     gameTransport = Transport.of(j.optString("gameTransport"))
                         ?.takeIf { it == Transport.AMNEZIA || it == Transport.WIREGUARD } ?: Transport.AMNEZIA,
                 )
@@ -123,7 +132,11 @@ data class Options(
          * The transports one connection tries, at most [limit]: the user's choice as it is, then the
          * one that worked last time, then [RANKING]. The fallbacks always fragment the handshake.
          */
+        /** Iran mode's fixed order: what survives DPI and UDP blocking first. */
+        val IRAN = listOf(Transport.MASQUE_H2, Transport.AMNEZIA, Transport.GOOL)
+
         fun chain(options: Options, remembered: Transport?, limit: Int = 3): List<Options> {
+            if (options.iran) return IRAN.map { options.copy(transport = it, fragment = true) }
             if (!options.autoFallback) return listOf(options)
             val out = mutableListOf(options)
             val order = listOfNotNull(remembered) + RANKING

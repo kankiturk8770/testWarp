@@ -126,6 +126,7 @@ class WarpService : VpnService() {
 
                 val budget = when {
                     pin != null -> PIN_PROBE_MS
+                    c.iran -> if (i == 0) IRAN_FIRST_MS else IRAN_NEXT_MS
                     i == 0 -> FIRST_PROBE_MS
                     else -> NEXT_PROBE_MS
                 }
@@ -270,6 +271,9 @@ class WarpService : VpnService() {
         private const val FIRST_PROBE_MS = 60_000L
         // A pinned gateway: no scan to wait for, so it either answers soon or not at all.
         private const val PIN_PROBE_MS = 30_000L
+        // Iran mode scans thoroughly and fragments the handshake: slower to find a gateway, given more time.
+        private const val IRAN_FIRST_MS = 90_000L
+        private const val IRAN_NEXT_MS = 50_000L
         private const val NEXT_PROBE_MS = 35_000L
         const val ACTION_START = "cafe.kankipro.warp.START"
         const val ACTION_STOP = "cafe.kankipro.warp.STOP"

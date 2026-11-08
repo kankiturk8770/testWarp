@@ -394,7 +394,38 @@ private fun TransportPicker(options: Options, enabled: Boolean, onOptions: (Opti
     val latest by rememberUpdatedState(options)
     val scan by PinScan.state.collectAsState()
     Column(Modifier.fillMaxWidth()) {
+        // Iran mode: one switch for the setup that has the best chance on Iran's networks
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                .background(if (options.iran) K.wine else Color.Transparent)
+                .border(1.dp, if (options.iran) K.ok else K.wineLine, RoundedCornerShape(16.dp))
+                .clickable(enabled = enabled) { onOptions(options.copy(iran = !options.iran)) }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("🇮🇷 حالت ایران", style = T.strong, color = if (options.iran) K.ok else K.champagne)
+                Text(
+                    "اول MASQUE · HTTP/2 روی پورت ۴۴۳ (شبیه یک سایت معمولی)، دست‌دادن تکه‌تکه، اسکن کامل دروازه؛ اگر نشد Amnezia و بعد Gool. " +
+                        "اتصال اول کندتر است. برای بازی «کاربر گیمر» را بزن.",
+                    style = T.small, color = K.rose,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                options.iran, { onOptions(options.copy(iran = it)) }, enabled = enabled,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = K.night, checkedTrackColor = K.ok,
+                    uncheckedThumbColor = K.rose, uncheckedTrackColor = K.wine, uncheckedBorderColor = K.wineLine,
+                ),
+            )
+        }
+        Spacer(Modifier.height(16.dp))
         Text("راه رسیدن به کلادفلر", style = T.strong, color = K.champagne)
+        if (options.iran) {
+            Text("حالت ایران روشن است؛ ترتیب خودکار: MASQUE · HTTP/2 ← Amnezia ← Gool (آی‌پی ثابت هر کدام اگر گذاشته باشی، استفاده می‌شود).",
+                style = T.small, color = K.ok)
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             (if (options.autoFallback) "اگر این یکی جواب نداد، دو پروتکل دیگر خودکار امتحان می‌شود. "

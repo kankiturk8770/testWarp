@@ -141,4 +141,14 @@ class CoreTest {
             assertTrue("text outside tags: '$rest'", rest.isBlank())
         }
     }
+
+    @Test fun iranModeIsHttp2FirstWithFragmentsAndAFullScan() {
+        val o = Options(transport = Transport.WIREGUARD, iran = true, fragment = false, autoFallback = false)
+        assertEquals(listOf(Transport.MASQUE_H2, Transport.AMNEZIA, Transport.GOOL), Options.chain(o, Transport.WIREGUARD).map { it.transport })
+        val a = Options.chain(o, null)[0].toArgs("/x/identity.toml")
+        assertTrue("--masque" in a && "--h2" in a && "--fragment" in a)
+        assertEquals("40", a[a.indexOf("--fragment-size") + 1])
+        assertEquals("thorough", a[a.indexOf("--scan") + 1])
+        assertTrue(Options.fromJson(o.toJson()).iran)
+    }
 }
