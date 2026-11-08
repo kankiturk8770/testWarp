@@ -144,11 +144,21 @@ class CoreTest {
 
     @Test fun iranModeIsHttp2FirstWithFragmentsAndAFullScan() {
         val o = Options(transport = Transport.WIREGUARD, iran = true, fragment = false, autoFallback = false)
-        assertEquals(listOf(Transport.MASQUE_H2, Transport.AMNEZIA, Transport.GOOL), Options.chain(o, Transport.WIREGUARD).map { it.transport })
+        assertEquals(listOf(Transport.MASQUE_H2, Transport.AMNEZIA, Transport.GOOL, Transport.PSIPHON), Options.chain(o, Transport.WIREGUARD).map { it.transport })
         val a = Options.chain(o, null)[0].toArgs("/x/identity.toml")
         assertTrue("--masque" in a && "--h2" in a && "--fragment" in a)
         assertEquals("40", a[a.indexOf("--fragment-size") + 1])
         assertEquals("thorough", a[a.indexOf("--scan") + 1])
         assertTrue(Options.fromJson(o.toJson()).iran)
+    }
+
+    @Test fun psiphonIsTheLastIranStepAndTakesItsRegion() {
+        val o = Options(iran = true)
+        assertEquals(Transport.PSIPHON, Options.chain(o, null).last().transport)
+        val a = Options(transport = Transport.PSIPHON, psiphonRegion = "DE").toArgs("/x/identity.toml")
+        assertTrue("--psiphon-only" in a)
+        assertEquals("DE", a[a.indexOf("--psiphon-region") + 1])
+        assertTrue("--psiphon-region" !in Options(transport = Transport.WIREGUARD, psiphonRegion = "DE").toArgs("/x/i.toml"))
+        assertEquals("DE", Options.fromJson(Options(psiphonRegion = "DE").toJson()).psiphonRegion)
     }
 }

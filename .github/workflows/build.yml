@@ -18,6 +18,9 @@ env:
   # Fixed commit, so every build uses the core that was tested. To update: put a newer commit here.
   AETHER_REF: 9ebdcc945af12ea532b32119884f846bdb9c4bfc
   HEV_TAG: "2.19.3"
+  # Psiphon for the core's --psiphon-only (the same fork and commit Aether's own psiphon-build.sh builds)
+  PSIPHON_REPO: https://github.com/CluvexStudio/psiphon-tunnel-core.git
+  PSIPHON_REF: 83aa73b9b982e7421e00117f5b0c5aceb5dda452
   NDK_VERSION: "26.3.11579264"
   ABI: arm64-v8a
   RUST_TARGET: aarch64-linux-android
@@ -113,8 +116,38 @@ jobs:
             APP_ABI="$ABI" APP_PLATFORM=android-29 -j"$(nproc)"
           cp "libs/$ABI/libhev-socks5-tunnel.so" "$GITHUB_WORKSPACE/app/src/main/jniLibs/$ABI/"
 
+      # ------------------------------------------------------------- Psiphon
+      # A static GOOS=linux program (CGO off) runs as-is on Android, as Aether ships it. It goes in
+      # jniLibs as libpsiphon.so so Android installs it executable in nativeLibraryDir.
+      - name: Cached Psiphon
+        id: psiphon
+        uses: actions/cache@v4
+        with:
+          path: psiphon-out
+          key: psiphon-${{ env.ABI }}-${{ env.PSIPHON_REF }}-v1
+
+      - name: Go (Psiphon)
+        if: steps.psiphon.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: false
+
+      - name: Build Psiphon
+        if: steps.psiphon.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 50 --branch shirokhorshid "$PSIPHON_REPO" psiphon-src
+          git -C psiphon-src checkout --quiet "$PSIPHON_REF"
+          mkdir -p psiphon-out
+          cd psiphon-src
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 GOFLAGS=-mod=vendor \
+            go build -trimpath -ldflags "-s -w" -o "$GITHUB_WORKSPACE/psiphon-out/libpsiphon.so" ./ConsoleClient
+
       - name: Native libraries
-        run: ls -la "app/src/main/jniLibs/$ABI"
+        run: |
+          cp psiphon-out/libpsiphon.so "app/src/main/jniLibs/$ABI/"
+          ls -la "app/src/main/jniLibs/$ABI"
 
       # --------------------------------------------------------------------- app
       - uses: gradle/actions/setup-gradle@v5
@@ -127,11 +160,11 @@ jobs:
       - name: Build APK
         run: gradle :app:assembleRelease --stacktrace
 
-      - name: Check the APK carries all three libraries
+      - name: Check the APK carries all four libraries
         run: |
           set -euo pipefail
           apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          for need in libaether.so libhev-socks5-tunnel.so libkwarp.so; do
+          for need in libaether.so libhev-socks5-tunnel.so libkwarp.so libpsiphon.so; do
             unzip -l "$apk" | grep -q "lib/$ABI/$need" || { echo "::error::$need is missing from the APK"; exit 1; }
           done
           ver=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')

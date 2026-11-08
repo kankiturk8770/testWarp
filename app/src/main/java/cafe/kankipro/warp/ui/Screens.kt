@@ -224,7 +224,7 @@ private fun IranChip(on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit)
     if (info) {
         AlertLikeTip(
             "حالت ایران: اول MASQUE · HTTP/2 روی پورت ۴۴۳ که شبیه یک سایت معمولی است، با دست‌دادن تکه‌تکه و اسکن کامل دروازه؛ " +
-                "اگر نشد Amnezia و بعد Gool. اتصال اول کندتر است."
+                "اگر نشد Amnezia، بعد Gool و آخر Psiphon (بدون کلادفلر). اتصال اول کندتر است."
         ) { info = false }
     }
 }
@@ -302,7 +302,7 @@ private fun Status(s: ConnState, options: Options) {
                 if (top == null) "اول مسیر بازی را اسکن کن" else destination(top.colo, top.pingMs) + "  ·  ${options.gameTransport.title}"
             } else {
                 val pin = options.pins[options.transport]
-                if (options.iran) "حالت ایران · MASQUE · HTTP/2 ← Amnezia ← Gool"
+                if (options.iran) "حالت ایران · MASQUE · HTTP/2 ← Amnezia ← Gool ← Psiphon"
                 else options.transport.title + (pin?.let { "  ·  آی‌پی ثابت" + (options.pinPing[options.transport]?.let { " $it ms" } ?: "") } ?: "")
             }
             Text(line, style = T.small, color = K.rose, textAlign = TextAlign.Center)
@@ -430,6 +430,7 @@ private fun short(t: Transport) = when (t) {
     Transport.MASQUE_H3 -> "QUIC · کم‌پینگ"
     Transport.GOOL -> "دو لایه"
     Transport.MIM -> "سخت‌گیرانه"
+    Transport.PSIPHON -> "شرایط خیلی سخت"
 }
 
 /** The normal user's protocols, two to a row; the white-IP scan is the small radar on each. */
@@ -681,6 +682,10 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
         Section("پیدا کردن گره") { Choice(Scan.entries, options.scan, { it.title }, !locked) { onOptions(options.copy(scan = it)) } }
         Section("نوع آی‌پی") { Choice(IpFamily.entries, options.ip, { it.title }, !locked) { onOptions(options.copy(ip = it)) } }
         Section("DNS") { Choice(Dns.entries, options.dns, { it.title }, !locked) { onOptions(options.copy(dns = it)) } }
+        Section("کشور خروج Psiphon") {
+            Choice(PSIPHON_REGIONS, PSIPHON_REGIONS.firstOrNull { it.first == options.psiphonRegion } ?: PSIPHON_REGIONS[0],
+                { it.second }, !locked) { onOptions(options.copy(psiphonRegion = it.first)) }
+        }
         Toggle("تکه‌تکه کردن دست‌دادن", options.fragment, !locked) { onOptions(options.copy(fragment = it)) }
         Toggle("پروتکل جایگزین خودکار", options.autoFallback, !locked) { onOptions(options.copy(autoFallback = it)) }
         Spacer(Modifier.height(8.dp))
@@ -716,6 +721,8 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
         )
     }
 }
+
+private val PSIPHON_REGIONS = listOf("" to "خودکار", "DE" to "آلمان", "TR" to "ترکیه", "NL" to "هلند", "FR" to "فرانسه")
 
 @Composable
 private fun KeyLine(label: String, value: String) {

@@ -14,7 +14,11 @@ enum class Transport(val title: String, val hint: String, val flags: List<String
     MASQUE_H2("MASQUE · HTTP/2", "روی TCP 443، مثل یک سایت معمولی؛ وقتی UDP بسته است", listOf("--masque", "--h2")),
     MASQUE_H3("MASQUE · HTTP/3", "روی QUIC (UDP)؛ کم‌پینگ‌ترین اگر باز باشد", listOf("--masque", "--h3")),
     GOOL("Gool", "WireGuard داخل MASQUE؛ دو لایه", listOf("--gool")),
-    MIM("MASQUE در MASQUE", "دو تونل تو در تو؛ سخت‌ترین برای فیلتر، کندتر", listOf("--mim"));
+    MIM("MASQUE در MASQUE", "دو تونل تو در تو؛ سخت‌ترین برای فیلتر، کندتر", listOf("--mim")),
+    // Psiphon alone, without WARP: for when every Cloudflare address is blocked. Its own network and
+    // obfuscation (built for Iran); slower, not for games. The core runs the psiphon-tunnel-core
+    // program the app carries (libpsiphon.so), see Engine.startCore.
+    PSIPHON("Psiphon", "شبکه‌ی خود Psiphon، بدون کلادفلر؛ برای وقتی همه‌چیز بسته است", listOf("--psiphon-only"));
 
     companion object {
         fun of(name: String?) = entries.firstOrNull { it.name == name }
@@ -60,6 +64,8 @@ data class Options(
      */
     val iran: Boolean = false,
     val dns: Dns = Dns.CLOUDFLARE,
+    /** Psiphon's exit country (two letters), "" = Psiphon picks. */
+    val psiphonRegion: String = "",
     val gameTransport: Transport = Transport.AMNEZIA,
 ) {
     /** The core's arguments: one SOCKS5 listener on the loopback, identity kept in [configPath]. */
@@ -75,6 +81,7 @@ data class Options(
         // Reuse the gateway that worked last time without rescanning, when it still answers; with a
         // pinned gateway nothing else is tried: the core goes to that one only and never scans.
         add(if (pins[transport] != null && pinnable) "--no-quick-reconnect" else "--quick-reconnect")
+        if (transport == Transport.PSIPHON && psiphonRegion.isNotBlank()) { add("--psiphon-region"); add(psiphonRegion) }
         pins[transport]?.let { pin ->
             when (transport) {
                 Transport.AMNEZIA, Transport.WIREGUARD -> { add("--wg-peer"); add(pin) }
@@ -98,6 +105,7 @@ data class Options(
         .put("gamer", gamer)
         .put("iran", iran)
         .put("dns", dns.name)
+        .put("psiphonRegion", psiphonRegion)
         .put("gameTransport", gameTransport.name)
         .toString()
 
@@ -122,6 +130,7 @@ data class Options(
                     gamer = j.optBoolean("gamer", false),
                     iran = j.optBoolean("iran", false),
                     dns = Dns.entries.firstOrNull { it.name == j.optString("dns") } ?: Dns.CLOUDFLARE,
+                    psiphonRegion = j.optString("psiphonRegion", ""),
                     gameTransport = Transport.of(j.optString("gameTransport"))
                         ?.takeIf { it == Transport.AMNEZIA || it == Transport.WIREGUARD } ?: Transport.AMNEZIA,
                 )
@@ -142,7 +151,7 @@ data class Options(
          * one that worked last time, then [RANKING]. The fallbacks always fragment the handshake.
          */
         /** Iran mode's fixed order: what survives DPI and UDP blocking first. */
-        val IRAN = listOf(Transport.MASQUE_H2, Transport.AMNEZIA, Transport.GOOL)
+        val IRAN = listOf(Transport.MASQUE_H2, Transport.AMNEZIA, Transport.GOOL, Transport.PSIPHON)
 
         fun chain(options: Options, remembered: Transport?, limit: Int = 3): List<Options> {
             if (options.iran) return IRAN.map { options.copy(transport = it, fragment = true) }

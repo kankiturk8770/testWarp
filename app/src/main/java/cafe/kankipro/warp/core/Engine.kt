@@ -120,7 +120,8 @@ object Engine {
     private fun learn(line: String) {
         PROFILE.find(line)?.let { wgProfile = it.groupValues[1].lowercase() }
         if ("validated" in line || "serving socks5" in line || "still works" in line ||
-            "using cloudflare edge" in line || "masque-in-masque ready" in line) tunnelReady = true
+            "using cloudflare edge" in line || "masque-in-masque ready" in line ||
+            ("psiphon" in line.lowercase() && ("tunnel established" in line.lowercase() || "connected" in line.lowercase()))) tunnelReady = true
         val gw = GATEWAY.find(line)?.groupValues?.get(1) ?: CACHED.find(line)?.groupValues?.get(1)
         if (gw != null) update { it.copy(gateway = gw) }
         // The gateway stage is proven by the core saying its tunnel carries data, not by a name.
@@ -159,6 +160,7 @@ object Engine {
             Transport.MASQUE_H2, Transport.MASQUE_H3 -> listOf(masque)
             Transport.GOOL -> listOf(masque, File(dir, "identity-masque-gool.toml"))
             Transport.MIM -> listOf(masque, File(dir, "identity-masque-secondary.toml"))
+            Transport.PSIPHON -> emptyList() // no WARP account
             Transport.WIREGUARD, Transport.AMNEZIA -> listOf(File(dir, "identity.toml"))
         }
     }
@@ -187,6 +189,7 @@ object Engine {
                 Transport.MASQUE_H2, Transport.MASQUE_H3 -> "masque"
                 Transport.GOOL -> "gool"
                 Transport.MIM -> "mim"
+                Transport.PSIPHON -> return@withContext null
                 Transport.WIREGUARD, Transport.AMNEZIA -> "wg"
             }
             val args = listOf("--config", identityPath(ctx), "--log-level", "info", "--register", set)
@@ -302,7 +305,13 @@ object Engine {
         val pin = options.pins[options.transport]?.takeIf { options.pinnable }
         update { it.copy(gateway = pin.orEmpty()) }
         pin?.let { note("pinned gateway: $it (no scan)") }
-        val args = options.toArgs(identityPath(ctx))
+        val args = options.toArgs(identityPath(ctx)).toMutableList()
+        if (options.transport == Transport.PSIPHON) {
+            // the psiphon-tunnel-core program, shipped as a native library so Android installs it executable
+            val bin = File(ctx.applicationInfo.nativeLibraryDir, "libpsiphon.so")
+            if (!bin.exists()) error("برنامه‌ی Psiphon در این نسخه نیست")
+            args += listOf("--psiphon-bin", bin.absolutePath, "--psiphon-dir", File(ctx.filesDir, "psiphon").apply { mkdirs() }.absolutePath)
+        }
         note("core ${args.joinToString(" ")}")
         val reply = JSONObject(Native.coreStart(JSONArray(args).toString()))
         if (!reply.optBoolean("ok")) error(reply.optString("error", "هسته شروع نشد"))
