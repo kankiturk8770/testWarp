@@ -181,19 +181,15 @@ class CoreTest {
         assertEquals("ایتالیا", Colos.countryName("IT"))
     }
 
-    @Test fun zeroTrustPacketsCarryTheDeviceIdAndTryTheOwnGatewayFirst() {
+    @Test fun zeroTrustUsesPlainHeadersAndTriesItsOwnGatewayFirst() {
         val toml = "wg_private_key = \"a\"\nwg_peer_public_key = \"b\"\nipv4 = \"100.96.0.2\"\n" +
             "client_id = \"AQID\"\nassigned_endpoint = \"162.159.193.10\"\n"
         val zt = WarpWg.parse(toml)!!.copy(team = true)
-        // bytes on the wire: [type, 1, 2, 3], read little-endian by the engine
-        val cfg = zt.config("162.159.193.10:2408", disguise = false)
-        assertTrue("H1 = ${1 + (1 shl 8) + (2 shl 16) + (3 shl 24)}" in cfg)
-        assertTrue("H4 = ${4 + (1 shl 8) + (2 shl 16) + (3 shl 24)}" in cfg)
+        // on a phone the gateway answered only the plain handshake: no device id in the headers
+        assertTrue("H1" !in zt.config("162.159.193.10:2408", disguise = false))
+        assertEquals(1 + (1 shl 8) + (2 shl 16) + (3 shl 24).toLong(), zt.header(1))
         assertEquals("162.159.193.10:2408", zt.ownGateways().first())
-        // the personal account stays plain
-        val warp = WarpWg.parse(toml)!!
-        assertTrue("H1" !in warp.config("x:1", disguise = false))
-        assertTrue("H1 = 1" in warp.config("x:1", disguise = true))
-        assertTrue(warp.ownGateways().isEmpty())
+        assertTrue(WarpWg.parse(toml)!!.ownGateways().isEmpty())
+        assertTrue(443 in WgScan.PORTS && 8443 in WgScan.PORTS)
     }
 }

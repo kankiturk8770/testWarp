@@ -30,8 +30,12 @@ data class WarpWg(
     /** The gateway the organization assigned (no port), "" when none. */
     val assigned: String = "",
 ) {
-    /** Zero Trust with a device id: every header carries it. */
-    val stamped: Boolean get() = team && clientId.size == 3
+    /**
+     * Whether the headers carry the device id. Off: on a phone (0.9.2) the Zero Trust gateway answered
+     * a plain handshake (valid, reserved bytes zero) and ignored one with the id; [header] stays for a
+     * later test of the data packets.
+     */
+    val stamped: Boolean get() = false
 
     /** The header word of message [type] (1 init, 2 response, 3 cookie, 4 data). */
     fun header(type: Int): Long {

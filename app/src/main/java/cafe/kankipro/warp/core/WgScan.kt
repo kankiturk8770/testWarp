@@ -59,6 +59,8 @@ object WgScan {
         943, 945, 946, 955, 968, 987, 988, 1002, 1010, 1014, 1018, 1070, 1074, 1180, 1387, 1843, 2371,
         2506, 3138, 3476, 3581, 3854, 4177, 4198, 4233, 5279, 5956, 7103, 7152, 7156, 7281, 7559, 8319,
         8742, 8854, 8886,
+        // also tried: 443 and 8443, the ports that most often get through filtering
+        443, 8443,
     )
 
     /** Time between two handshakes of one account. */
@@ -211,7 +213,7 @@ object WgScan {
     /** Every address of the ranges on the common ports first, then random pairs up to [n]. */
     fun candidates(n: Int): List<String> {
         val out = LinkedHashSet<String>()
-        for (p in PREFIXES) for (port in listOf(2408, 500, 1701, 4500)) out += "$p.1:$port"
+        for (p in PREFIXES) for (port in listOf(2408, 500, 443, 8443, 1701, 4500)) out += "$p.1:$port"
         // a few known MASQUE gateways on WireGuard's main ports
         for (h in listOf("162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2")) for (port in listOf(2408, 500, 4500, 443)) out += "$h:$port"
         val rnd = Random(System.nanoTime())

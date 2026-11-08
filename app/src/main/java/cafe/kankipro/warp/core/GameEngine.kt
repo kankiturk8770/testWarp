@@ -238,8 +238,7 @@ object GameEngine {
                     Engine.note("game: Zero Trust gateways ${list.joinToString(" ")}; device id in the headers: ${acct.stamped}")
                     // what Cloudflare answers, with and without the device id in the handshake
                     list.firstOrNull()?.let { gw ->
-                        Engine.note("game: zt check with id: " + WgScan.raw(acct.config(gw, false), gw))
-                        Engine.note("game: zt check plain: " + WgScan.raw(acct.copy(team = false).config(gw, false), gw))
+                        Engine.note("game: zt check: " + WgScan.raw(acct.config(gw, false), gw))
                     }
                 }
                 for ((n, ep) in list.withIndex()) {
@@ -249,7 +248,8 @@ object GameEngine {
                             n == 0 -> "روشن کردن موتور بازی…"
                             else -> "دروازه‌ی قبلی رد شد؛ امتحان $ep…"
                         }) }
-                    up(ctx, acct.config(ep, transport == Transport.AMNEZIA, dns = Prefs.options(ctx).dns.servers))
+                    // Zero Trust's gateway answers only plain WireGuard handshakes (checked on a phone), so no Amnezia junk there
+                    up(ctx, acct.config(ep, transport == Transport.AMNEZIA && !acct.team, dns = Prefs.options(ctx).dns.servers))
                     Engine.update { it.copy(proven = 2, message = "دست دادن با کلادفلر…") }
                     // Gateway proven = data came back from it; internet proven = a real request answered.
                     val deadline = SystemClock.elapsedRealtime() + 9_000
@@ -279,6 +279,8 @@ object GameEngine {
                 Engine.note("✓ وصل با: $actual")
                 Engine.update { it.copy(phase = Phase.RUNNING, proven = 4, message = "", egress = out, actual = actual,
                     startedAt = SystemClock.elapsedRealtime()) }
+                // accounts the open network could not make, now through this tunnel
+                scope.launch { Engine.prepareAll(ctx) }
                 watch(ctx)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

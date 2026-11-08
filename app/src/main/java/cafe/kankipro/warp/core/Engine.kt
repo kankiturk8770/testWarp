@@ -267,6 +267,40 @@ object Engine {
         private set
 
     /** «ساختن اکانت تازه»: forget the old accounts and make a new one now, for [transport]. */
+    /** The protocols whose WARP accounts are made ahead of time (Psiphon needs none). */
+    private val PREPARE = listOf(Transport.WIREGUARD, Transport.MASQUE_H2, Transport.GOOL, Transport.MIM)
+
+    /**
+     * Makes every protocol's WARP account that is missing, one after another, as soon as the app opens
+     * (and again once a gamer connection is up, through it, for those the open network blocked), so
+     * connecting never waits for Cloudflare's API. Each one on its own: a failure leaves the rest.
+     * The core runs one job at a time, so this only goes while it is free: idle, or a gamer
+     * connection (which does not use the core).
+     */
+    suspend fun prepareAll(ctx: Context) {
+        if (accountBusy) return
+        val missing = PREPARE.filter { !hasIdentity(ctx, it) }
+        if (missing.isEmpty()) return
+        accountBusy = true
+        try {
+            val failed = ArrayList<String>()
+            for (t in missing) {
+                val st = state.value
+                if (!(st.phase == Phase.IDLE || st.phase == Phase.ERROR || (st.phase == Phase.RUNNING && st.gamer))) {
+                    failed += t.title; continue
+                }
+                _account.value = "در حال ساخت اکانت ${t.title}…"
+                val err = register(ctx, t, 120_000)
+                note("prepare ${t.title}: ${err ?: "ok"}")
+                if (err != null) failed += t.title
+            }
+            _account.value = if (failed.isEmpty()) "اکانت همه‌ی پروتکل‌ها آماده است ✓"
+            else "ساخته نشد: ${failed.joinToString("، ")} (بعد از اتصال دوباره امتحان می‌شود)"
+        } finally {
+            accountBusy = false
+        }
+    }
+
     suspend fun remakeAccount(ctx: Context, transport: Transport) {
         if (accountBusy) return
         accountBusy = true

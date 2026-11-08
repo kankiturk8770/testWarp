@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
         // opened from Cloudflare's Zero Trust enrolment link: join, in gamer mode, on the settings tab
         val fromLink = zeroTrustLink(intent)
         if (fromLink && !options.gamer) { options = options.copy(gamer = true); Prefs.save(this, options) }
+        // every protocol's WARP account now, not when connecting
+        lifecycleScope.launch { Engine.prepareAll(applicationContext) }
         setContent {
             KankiTheme {
                 Box(Modifier.fillMaxSize().background(K.night).safeDrawingPadding()) {
