@@ -228,6 +228,8 @@ object GameEngine {
                 val team = ZeroTrust.team(ctx)
                 val accounts = listOfNotNull(ZeroTrust.identity(ctx)?.let { it to "Zero Trust ($team)" }) + (id to "")
                 var via = ""
+                // Zero Trust with the Amnezia junk only when its gateway answers a disguised handshake
+                var ztDisguise = false
                 for ((acct, label) in accounts) {
                 if (egress != null) break
                 if (label.isNotEmpty()) Engine.note("game: trying $label first")
@@ -239,6 +241,11 @@ object GameEngine {
                     // what Cloudflare answers, with and without the device id in the handshake
                     list.firstOrNull()?.let { gw ->
                         Engine.note("game: zt check: " + WgScan.raw(acct.config(gw, false), gw))
+                        if (transport == Transport.AMNEZIA) {
+                            val r = WgScan.raw(acct.config(gw, true), gw)
+                            ztDisguise = "valid true" in r
+                            Engine.note("game: zt check amnezia: $r")
+                        }
                     }
                 }
                 for ((n, ep) in list.withIndex()) {
@@ -249,7 +256,7 @@ object GameEngine {
                             else -> "دروازه‌ی قبلی رد شد؛ امتحان $ep…"
                         }) }
                     // Zero Trust's gateway answers only plain WireGuard handshakes (checked on a phone), so no Amnezia junk there
-                    up(ctx, acct.config(ep, transport == Transport.AMNEZIA && !acct.team, dns = Prefs.options(ctx).dns.servers))
+                    up(ctx, acct.config(ep, transport == Transport.AMNEZIA && (!acct.team || ztDisguise), dns = Prefs.options(ctx).dns.servers))
                     Engine.update { it.copy(proven = 2, message = "دست دادن با کلادفلر…") }
                     // Gateway proven = data came back from it; internet proven = a real request answered.
                     val deadline = SystemClock.elapsedRealtime() + 9_000
@@ -271,7 +278,7 @@ object GameEngine {
                 // Say what really connected: Amnezia only when the engine took the config with its junk packets.
                 val actual = when {
                     // Zero Trust goes plain on purpose: its gateway answers no disguised handshake
-                    via.isNotEmpty() -> "WireGuard ساده"
+                    via.isNotEmpty() && !ztDisguise -> "WireGuard ساده (دروازه‌ی تیم پوشش Amnezia را جواب نداد)"
                     transport != Transport.AMNEZIA -> "WireGuard ساده (بی‌پوشش)"
                     took == "full" -> "Amnezia · پوشش کامل (امضای I1–I4 + آشغال)"
                     took == "without I1..I3" -> "Amnezia · فقط بسته‌ی آشغال (موتور امضاها را نپذیرفت)"
