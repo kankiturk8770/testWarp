@@ -270,6 +270,8 @@ object GameEngine {
                 val ep = used
                 // Say what really connected: Amnezia only when the engine took the config with its junk packets.
                 val actual = when {
+                    // Zero Trust goes plain on purpose: its gateway answers no disguised handshake
+                    via.isNotEmpty() -> "WireGuard ساده"
                     transport != Transport.AMNEZIA -> "WireGuard ساده (بی‌پوشش)"
                     took == "full" -> "Amnezia · پوشش کامل (امضای I1–I4 + آشغال)"
                     took == "without I1..I3" -> "Amnezia · فقط بسته‌ی آشغال (موتور امضاها را نپذیرفت)"
