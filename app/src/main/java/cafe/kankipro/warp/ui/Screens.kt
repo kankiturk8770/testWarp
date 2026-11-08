@@ -591,7 +591,7 @@ private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) 
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { (cc, list) ->
-                        CountryColumn(Modifier.weight(1f), cc, Colos.countryName(cc), list, chosen, enabled && !scan.running, 2) { GameEngine.pick(ctx, it) }
+                        CountryColumn(Modifier.weight(1f), cc, Colos.countryName(cc), list, chosen, enabled && !scan.running, 4) { GameEngine.pick(ctx, it) }
                     }
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
@@ -623,7 +623,7 @@ private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) 
 @Composable
 private fun CountryColumn(
     modifier: Modifier, cc: String, name: String, hits: List<WgScan.Hit>, chosen: String?, enabled: Boolean,
-    max: Int = 4,
+    max: Int = 8,
     onPick: (WgScan.Hit) -> Unit,
 ) {
     Column(modifier) {

@@ -107,13 +107,15 @@ object GameEngine {
             val disguise = transport == Transport.AMNEZIA
             // Phase 1: a wide sweep (about 1500 of WARP's ~96,000 address:port pairs), real handshakes.
             val found = runCatching {
-                // Quick: ~600 pairs (about 8 s of handshakes), the best 10, 4 samples each; full: 2000 / 16 / 8.
-                val (wide, keep, samples) = if (fast) Triple(600, 10, 4) else Triple(2000, 16, 8)
+                // Quick: ~800 pairs (about 10 s of handshakes), the best 30, 3 samples each; full: 2000 / 60 / 6.
+                // Earlier only 10/16 were kept and the screen showed 4: most of what answered was dropped.
+                val (wide, keep, samples) = if (fast) Triple(800, 30, 3) else Triple(2000, 60, 6)
                 WgScan.scan(id, disguise, wide = wide, keep = keep, samples = samples) { d, t, f ->
                     _scan.value = _scan.value.copy(done = d, total = t, found = f, phase = 1)
                 }
             }.getOrElse { emptyList() }
             // Phase 2: the city of each, by connecting for a moment and asking Cloudflare where we came out.
+            Engine.note("scan: ${_scan.value.found} gateways answered; ${found.size} kept after the steadiness check")
             val located = if (found.isEmpty()) emptyList() else locate(ctx, id, disguise, found, if (fast) 4000 else 6000)
             val hits = (located.ifEmpty { found }).sortedWith(compareBy({ it.country !in setOf("DE", "TR") }, { it.score }))
             if (hits.isNotEmpty()) Prefs.saveGameHits(ctx, net, hits)
