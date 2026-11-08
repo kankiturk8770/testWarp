@@ -41,9 +41,12 @@ data class WarpWg(
         appendLine("DNS = 1.1.1.1, 1.0.0.1")
         appendLine("MTU = $mtu")
         if (disguise) {
-            // Junk packets before the handshake only. The I1..I5 signature packets made the engine
-            // (amneziawg-go inside the app) crash the whole app on a phone in 0.4.0, a crash no
-            // try/catch can stop; Jc/Jmin/Jmax have been in every AmneziaWG version.
+            // Signature packets sent before each handshake (AmneziaWG 1.5), the same idea as the core's
+            // «aggressive» profile: they look like the start of HTTP and other protocols. Only tags the
+            // engine's parser knows (wgtunnel/amneziawg-go device/obf.go: b, t, r, rc, rd), each with a
+            // single number; ranges like «40-64» or <c> are refused there. They go once per handshake
+            // (about every two minutes), never with game packets, so they cost no ping.
+            for ((n, spec) in SIGNATURES.withIndex()) appendLine("I${n + 1} = $spec")
             appendLine("Jc = 4")
             appendLine("Jmin = 40")
             appendLine("Jmax = 70")
@@ -64,6 +67,14 @@ data class WarpWg(
     private fun slash(ip: String, bits: Int) = if ('/' in ip) ip else "$ip/$bits"
 
     companion object {
+        /** The I1..I4 signature packets: CRLF CRLF, «POST», «GET» and a random one. */
+        val SIGNATURES = listOf(
+            "<b 0x0d0a0d0a><t><rc 48>",
+            "<b 0x504f5354><t><rd 20><rc 40>",
+            "<b 0x474554><rc 50>",
+            "<r 80>",
+        )
+
         /** Reads the WireGuard identity; null until the core has registered one. */
         fun load(ctx: Context): WarpWg? {
             val f = File(File(ctx.filesDir, "warp"), "identity.toml")

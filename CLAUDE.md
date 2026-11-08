@@ -20,6 +20,11 @@
 فقط اسم فایل، کد، دستور و اسم پروتکل‌ها انگلیسی می‌ماند. صاحب پروژه دارد برنامه‌نویسی یاد می‌گیرد: جواب‌ها کوتاه و ساده.
 
 ## گزارش کارها
+- 2026-11-08 — نسخه‌ی 0.4.4: صاحب پروژه پرسید I5 پینگ را بالا می‌برد؟ (نه: فقط موقع دست‌دادن) و خواست برای ایران اضافه شود. سورس `wgtunnel/amneziawg-go`
+  (همان که در `amneziawg-android` 2.3.7 جایگزین شده) خوانده شد: `device/obf.go` فقط `b`(هگز زوج)، `t`، `r`/`rc`/`rd` (یک عدد)، `d`/`ds`/`dz`؛ بازه و `<c>` نه.
+  شکل I1–I3 نسخه‌ی 0.4.0 درست بود؛ کرش آن نسخه به احتمال زیاد از H خالی و فعال‌سازی ناموفق پشت‌سرهم روی ۴ دروازه بود. حالا `WarpWg.SIGNATURES` (I1–I4)
+  + Jc + H1–H4، و تست `signaturePacketsUseOnlyTagsTheEngineReads`. قانون قبلی «I نگذار» با این تست جایگزین شد. **Amnezia حالت عادی** (هسته‌ی Aether):
+  همان ایده (I1–I5 + آشغال، پروفایل aggressive) ولی بدون S و H عوض‌شده چون سرور کلادفلر است؛ نزدیک AmneziaVPN 1.5 نه کامل. روی گوشی هنوز نه.
 - 2026-11-08 — نسخه‌ی 0.4.3: صاحب پروژه گیج شد چون لاگ Amnezia را «wireguard» می‌گفت و گیمر با WireGuard ساده می‌نوشت «verified via Amnezia».
   حالا `ConnState.actual` و خط «✓ وصل با: …»: عادی از `Engine.wgProfile` (خط `profile 'X' passed`، `actualOf`)، گیمر از `GameEngine.took`. تست: ۱۱ تست.
 - 2026-11-08 — نسخه‌ی 0.4.2: گزارش گوشی: Amnezia گیمر «engine refused the config (full): GO_ACTIVATION_ERROR_CODE» و بعد «took the config plain WireGuard»؛

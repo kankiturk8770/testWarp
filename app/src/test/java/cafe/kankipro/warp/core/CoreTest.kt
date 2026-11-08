@@ -61,7 +61,8 @@ class CoreTest {
         assertTrue("Address = 172.16.0.2/32, 2606:4700:110:8a36::1/128" in plain)
         assertTrue("Endpoint = 162.159.192.1:2408" in plain && "Jc" !in plain)
         val amnezia = id.config("162.159.192.1:2408", disguise = true)
-        assertTrue("Jc = 4" in amnezia && "I1" !in amnezia && "S1" !in amnezia)
+        assertTrue("Jc = 4" in amnezia && "I1 = " in amnezia && "S1" !in amnezia)
+        assertTrue("I1" !in plain && "Jc" !in plain)
         // the engine needs all four headers once Jc is set; plain WireGuard's own values
         assertTrue((1..4).all { "H$it = $it" in amnezia })
         assertTrue("H1" !in plain)
@@ -119,5 +120,25 @@ class CoreTest {
         assertEquals("WireGuard · پوشش balanced", Engine.actualOf(Transport.WIREGUARD))
         assertEquals(Transport.MASQUE_H2.title, Engine.actualOf(Transport.MASQUE_H2))
         Engine.wgProfile = ""
+    }
+
+    /** The same rules as the engine's parser (wgtunnel/amneziawg-go device/obf.go), so a bad tag never reaches the phone. */
+    @Test fun signaturePacketsUseOnlyTagsTheEngineReads() {
+        val tag = Regex("""<([a-z]+)(?:\s+([^>]*))?>""")
+        for (spec in WarpWg.SIGNATURES) {
+            var rest = spec
+            for (m in tag.findAll(spec)) {
+                rest = rest.replace(m.value, "")
+                val key = m.groupValues[1]
+                val v = m.groupValues[2]
+                when (key) {
+                    "b" -> { val hex = v.removePrefix("0x"); assertTrue(hex.isNotEmpty() && hex.length % 2 == 0 && hex.all { it.isLetterOrDigit() }) }
+                    "t" -> assertTrue(v.isEmpty())
+                    "r", "rc", "rd" -> assertTrue("$key needs one whole number: '$v'", v.toIntOrNull()?.let { it > 0 } == true)
+                    else -> throw AssertionError("tag <$key> is not one the engine reads")
+                }
+            }
+            assertTrue("text outside tags: '$rest'", rest.isBlank())
+        }
     }
 }

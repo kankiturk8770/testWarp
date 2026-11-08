@@ -13,8 +13,8 @@ android {
         applicationId = "cafe.kankipro.warp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.4.3"
+        versionCode = 9
+        versionName = "0.4.4"
         // Only arm64: building the Rust core takes ~40 minutes per ABI in CI.
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=none" } }
