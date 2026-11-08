@@ -233,7 +233,7 @@ object GameEngine {
                 for ((acct, label) in accounts) {
                 if (egress != null) break
                 if (label.isNotEmpty()) Engine.note("game: trying $label first")
-                else if (accounts.size > 1) Engine.note("game: Zero Trust did not pass; back to personal WARP")
+                else if (accounts.size > 1 && (transport != Transport.AMNEZIA || ztDisguise)) Engine.note("game: Zero Trust did not pass; back to personal WARP")
                 // Zero Trust: the organization's own gateway first, then the scanned ones.
                 val list = (acct.ownGateways() + tries).distinct().take(if (acct.team) 6 else 4)
                 if (acct.team) {
@@ -246,6 +246,12 @@ object GameEngine {
                             ztDisguise = "valid true" in r
                             Engine.note("game: zt check amnezia: $r")
                         }
+                    }
+                    // Amnezia picked means Amnezia: when the team gateway will not take the disguise,
+                    // Zero Trust is skipped and the personal account goes with the full disguise.
+                    if (transport == Transport.AMNEZIA && !ztDisguise) {
+                        Engine.note("game: Zero Trust does not take Amnezia; personal WARP with Amnezia instead")
+                        continue
                     }
                 }
                 for ((n, ep) in list.withIndex()) {
@@ -278,7 +284,7 @@ object GameEngine {
                 // Say what really connected: Amnezia only when the engine took the config with its junk packets.
                 val actual = when {
                     // Zero Trust goes plain on purpose: its gateway answers no disguised handshake
-                    via.isNotEmpty() && !ztDisguise -> "WireGuard ساده (دروازه‌ی تیم پوشش Amnezia را جواب نداد)"
+                    via.isNotEmpty() && !ztDisguise -> "WireGuard ساده"
                     transport != Transport.AMNEZIA -> "WireGuard ساده (بی‌پوشش)"
                     took == "full" -> "Amnezia · پوشش کامل (امضای I1–I4 + آشغال)"
                     took == "without I1..I3" -> "Amnezia · فقط بسته‌ی آشغال (موتور امضاها را نپذیرفت)"
