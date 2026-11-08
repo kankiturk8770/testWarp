@@ -175,6 +175,32 @@ object WgScan {
         return result
     }
 
+    /**
+     * One handshake to [endpoint] with [cfg]'s headers; says what came back: its size and first four
+     * bytes in hex (byte 0 the type, 1..3 the "reserved" bytes Zero Trust uses for the device id), or
+     * that nothing came. For the log, to see whether Cloudflare's answers carry the device id.
+     */
+    fun raw(cfg: String, endpoint: String, waitMs: Int = 2500): String = runCatching {
+        val hello = WgHello.of(cfg) ?: return "no config"
+        DatagramSocket().use { s ->
+            s.soTimeout = waitMs
+            val to = InetSocketAddress(endpoint.substringBeforeLast(':'), endpoint.substringAfterLast(':').toInt())
+            val sent = hello.hello(WgHello.stamp())
+            sent.junk.forEach { s.send(DatagramPacket(it, it.size, to)) }
+            s.send(DatagramPacket(sent.packet, sent.packet.size, to))
+            val out = "sent ${sent.packet.copyOf(4).joinToString("") { "%02x".format(it) }}"
+            val buf = ByteArray(512)
+            val pkt = DatagramPacket(buf, buf.size)
+            try {
+                s.receive(pkt)
+            } catch (_: SocketTimeoutException) {
+                return "$out, no answer"
+            }
+            val head = buf.copyOf(minOf(4, pkt.length)).joinToString("") { "%02x".format(it) }
+            "$out, answer ${pkt.length} bytes, head $head, valid ${hello.answers(buf.copyOf(pkt.length), sent)}"
+        }
+    }.getOrElse { "error ${it.message}" }
+
     fun summarize(ep: String, rtts: List<Int>, sent: Int): Hit {
         val avg = rtts.average().toInt()
         val jitter = if (rtts.size < 2) 0 else rtts.zipWithNext { a, b -> abs(a - b) }.average().toInt()

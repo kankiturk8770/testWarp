@@ -234,7 +234,14 @@ object GameEngine {
                 else if (accounts.size > 1) Engine.note("game: Zero Trust did not pass; back to personal WARP")
                 // Zero Trust: the organization's own gateway first, then the scanned ones.
                 val list = (acct.ownGateways() + tries).distinct().take(if (acct.team) 6 else 4)
-                if (acct.team) Engine.note("game: Zero Trust gateways ${list.joinToString(" ")}; device id in the headers: ${acct.stamped}")
+                if (acct.team) {
+                    Engine.note("game: Zero Trust gateways ${list.joinToString(" ")}; device id in the headers: ${acct.stamped}")
+                    // what Cloudflare answers, with and without the device id in the handshake
+                    list.firstOrNull()?.let { gw ->
+                        Engine.note("game: zt check with id: " + WgScan.raw(acct.config(gw, false), gw))
+                        Engine.note("game: zt check plain: " + WgScan.raw(acct.copy(team = false).config(gw, false), gw))
+                    }
+                }
                 for ((n, ep) in list.withIndex()) {
                     Engine.update { it.copy(gateway = ep, proven = 1, attempt = n + 1, attempts = list.size,
                         message = when {
