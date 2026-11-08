@@ -28,11 +28,6 @@ object Native {
     @JvmStatic external fun jobPoll(id: Long): String?
     @JvmStatic external fun jobCancel(id: Long): String?
     @JvmStatic external fun jobFree(id: Long): String?
-    /** Zero Trust email code: {"team","email"} → a job whose result has the session id. */
-    @JvmStatic external fun teamCodeRequest(payloadJson: String): String
-    /** The code from the email → a job whose result says signed_in and the token. */
-    @JvmStatic external fun teamCodeSubmit(session: Long, code: String): String
-    @JvmStatic external fun teamSessionFree(session: Long): String?
     @JvmStatic external fun hevRun(configPath: String, tunFd: Int): Int
     @JvmStatic external fun hevStop()
     /** tx packets, tx bytes, rx packets, rx bytes. */

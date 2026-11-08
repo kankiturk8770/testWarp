@@ -162,8 +162,22 @@ class CoreTest {
         assertEquals("DE", Options.fromJson(Options(psiphonRegion = "DE").toJson()).psiphonRegion)
     }
 
-    @Test fun zeroTrustTeamNameIsWhatTheCoreWrites() {
+    @Test fun zeroTrustTakesTheTeamFromTheLinkOrTheToken() {
         assertEquals("myteam", ZeroTrust.normalize(" https://MyTeam.cloudflareaccess.com/ "))
-        assertEquals("my-team", ZeroTrust.normalize("my-team"))
+        val b64 = { t: String -> java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(t.toByteArray()) }
+        val jwt = b64("{\"alg\":\"RS256\"}") + "." + b64("{\"iss\":\"https://acme.cloudflareaccess.com\",\"sub\":\"x\"}") + ".c2lnbmF0dXJlLXNpZ25hdHVyZQ"
+        assertEquals("acme" to jwt, ZeroTrust.parse("com.cloudflare.warp://acme.cloudflareaccess.com/auth?token=$jwt"))
+        assertEquals("acme" to jwt, ZeroTrust.parse("  $jwt  "))
+        assertEquals("" to "", ZeroTrust.parse("hello"))
+    }
+
+    @Test fun everyCountryFoundIsGroupedWithTurkeyAndGermanyApart() {
+        val hits = listOf(
+            WgScan.Hit("a:1", 70, 2, 0, "MXP"), WgScan.Hit("b:1", 60, 2, 0, "IST"),
+            WgScan.Hit("c:1", 90, 2, 0, "VIE"), WgScan.Hit("d:1", 80, 2, 0, "FCO"), WgScan.Hit("e:1", 99, 2, 0, "ZZZ"),
+        )
+        assertEquals(listOf("IT", "AT", "??"), Colos.otherCountries(hits).map { it.first })
+        assertEquals(listOf("a:1", "d:1"), Colos.otherCountries(hits)[0].second.map { it.endpoint })
+        assertEquals("ایتالیا", Colos.countryName("IT"))
     }
 }

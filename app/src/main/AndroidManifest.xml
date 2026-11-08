@@ -26,6 +26,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Zero Trust: the enrolment page ends on com.cloudflare.warp://<team>.cloudflareaccess.com/auth?token=…;
+                 opened here, the gamer's Zero Trust account is made from it (ZeroTrust.join). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.cloudflare.warp" />
+            </intent-filter>
         </activity>
 
         <service

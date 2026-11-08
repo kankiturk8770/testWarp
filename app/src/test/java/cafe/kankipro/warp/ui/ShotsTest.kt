@@ -94,7 +94,9 @@ class ShotsTest {
             cafe.kankipro.warp.core.WgScan.Hit("162.159.192.7:2408", 61, 6, 0, "IST"),
             cafe.kankipro.warp.core.WgScan.Hit("162.159.195.40:1701", 95, 9, 0, "DUS"),
             cafe.kankipro.warp.core.WgScan.Hit("188.114.96.9:1002", 88, 12, 0, "IST"),
-            cafe.kankipro.warp.core.WgScan.Hit("188.114.99.4:8854", 140, 22, 10, "MXP"),
+            cafe.kankipro.warp.core.WgScan.Hit("188.114.99.4:8854", 78, 4, 0, "MXP"),
+            cafe.kankipro.warp.core.WgScan.Hit("162.159.198.2:500", 92, 7, 0, "VIE"),
+            cafe.kankipro.warp.core.WgScan.Hit("162.159.199.9:2408", 118, 15, 0, "DXB"),
         ))
         shot("7-gamer", ConnState(), options = Options(gamer = true))
     }

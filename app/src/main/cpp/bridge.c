@@ -25,7 +25,6 @@ typedef char *(*fn_str)(void);
 typedef void (*fn_free)(char *);
 typedef char *(*fn_start)(const char *);
 typedef char *(*fn_job)(uint64_t);
-typedef char *(*fn_submit)(uint64_t, const char *);
 typedef int (*fn_hev_main)(const char *, int);
 typedef void (*fn_hev_stop)(void);
 typedef void (*fn_hev_stats)(size_t *, size_t *, size_t *, size_t *);
@@ -35,10 +34,6 @@ static fn_str a_version;
 static fn_free a_free;
 static fn_start a_start;
 static fn_job a_poll, a_cancel, a_jfree;
-/* Zero Trust email sign-in; optional: an older core without them still loads. */
-static fn_start a_team_req;
-static fn_submit a_team_submit;
-static fn_job a_team_sfree;
 static fn_hev_main h_main;
 static fn_hev_stop h_stop;
 static fn_hev_stats h_stats;
@@ -75,9 +70,6 @@ static int load(void) {
     SYM(aether, a_poll, fn_job, "aether_job_poll");
     SYM(aether, a_cancel, fn_job, "aether_job_cancel");
     SYM(aether, a_jfree, fn_job, "aether_job_free");
-    a_team_req = (fn_start) dlsym(aether, "aether_team_code_request");
-    a_team_submit = (fn_submit) dlsym(aether, "aether_team_code_submit");
-    a_team_sfree = (fn_job) dlsym(aether, "aether_team_session_free");
     if (!hev) {
         hev = dlopen("libhev-socks5-tunnel.so", RTLD_NOW | RTLD_GLOBAL);
         if (!hev) {
@@ -180,28 +172,6 @@ JNIEXPORT jstring JNICALL FN(jobCancel)(JNIEnv *env, jclass c, jlong id) {
 
 JNIEXPORT jstring JNICALL FN(jobFree)(JNIEnv *env, jclass c, jlong id) {
     return load() ? take(env, a_jfree((uint64_t) id)) : NULL;
-}
-
-#define NO_TEAM "{\"ok\":false,\"error\":\"this core has no Zero Trust sign-in\"}"
-
-JNIEXPORT jstring JNICALL FN(teamCodeRequest)(JNIEnv *env, jclass c, jstring payload) {
-    if (!load() || !a_team_req) return (*env)->NewStringUTF(env, NO_TEAM);
-    const char *raw = (*env)->GetStringUTFChars(env, payload, NULL);
-    jstring out = take(env, a_team_req(raw));
-    (*env)->ReleaseStringUTFChars(env, payload, raw);
-    return out;
-}
-
-JNIEXPORT jstring JNICALL FN(teamCodeSubmit)(JNIEnv *env, jclass c, jlong session, jstring code) {
-    if (!load() || !a_team_submit) return (*env)->NewStringUTF(env, NO_TEAM);
-    const char *raw = (*env)->GetStringUTFChars(env, code, NULL);
-    jstring out = take(env, a_team_submit((uint64_t) session, raw));
-    (*env)->ReleaseStringUTFChars(env, code, raw);
-    return out;
-}
-
-JNIEXPORT jstring JNICALL FN(teamSessionFree)(JNIEnv *env, jclass c, jlong session) {
-    return load() && a_team_sfree ? take(env, a_team_sfree((uint64_t) session)) : NULL;
 }
 
 JNIEXPORT jint JNICALL FN(hevRun)(JNIEnv *env, jclass c, jstring config, jint fd) {

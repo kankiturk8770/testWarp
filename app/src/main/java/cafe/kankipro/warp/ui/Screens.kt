@@ -100,7 +100,7 @@ fun App(
     onToggle: () -> Unit,
     onForget: () -> Unit,
     initialTab: Tab = Tab.HOME,
-    onGameScan: () -> Unit = {},
+    onGameScan: (Boolean) -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(initialTab) }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -145,7 +145,7 @@ private fun NavBar(tab: Tab, gamer: Boolean, onTab: (Tab) -> Unit) {
 // ---------------------------------------------------------------- home
 
 @Composable
-private fun Home(options: Options, onOptions: (Options) -> Unit, onToggle: () -> Unit, onGameScan: () -> Unit) {
+private fun Home(options: Options, onOptions: (Options) -> Unit, onToggle: () -> Unit, onGameScan: (Boolean) -> Unit) {
     val s by Engine.state.collectAsState()
     var showAll by remember { mutableStateOf(false) }
     val running = s.phase == Phase.RUNNING
@@ -313,7 +313,7 @@ private fun Status(s: ConnState, options: Options) {
 /** «🇩🇪 فرانکفورت · 82 ms», or what part of it is known. */
 private fun destination(colo: String?, ping: Int?): String {
     val c = colo?.uppercase().orEmpty()
-    val flag = when (Colos.country(c)) { "DE" -> flag("DE"); "TR" -> flag("TR"); else -> null }
+    val flag = flag(Colos.country(c))
     val city = Colos.NAMES[c] ?: c.ifBlank { null }
     return listOfNotNull(listOfNotNull(flag, city).joinToString(" ").ifBlank { null }, ping?.let { ltr("$it ms") }).joinToString("  ·  ")
 }
@@ -534,10 +534,9 @@ internal fun SmallButton(text: String, color: Color, enabled: Boolean, onClick: 
  * best first (Frankfurt leads Germany), then the engine. Each result: city, ping, jitter, loss.
  */
 @Composable
-private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) -> Unit, onGameScan: () -> Unit) {
+private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) -> Unit, onGameScan: (Boolean) -> Unit) {
     val ctx = LocalContext.current
     val scan by GameEngine.scan.collectAsState()
-    var more by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { GameEngine.loadSaved(ctx) }
     val chosen = scan.hits.firstOrNull()?.endpoint
     Column(Modifier.fillMaxWidth()) {
@@ -545,26 +544,29 @@ private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) 
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(K.wine)
                 .border(1.dp, if (scan.running) K.amber else K.wineLine, RoundedCornerShape(14.dp))
-                .clickable(enabled = enabled && !scan.running) { onGameScan() }
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Ic.radar, null, tint = K.amber, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(if (scan.running) "در حال اسکن مسیر بازی" else "اسکن مسیر بازی", style = T.strong.copy(fontSize = 14.sp), color = K.champagne)
+                Text(if (scan.running) (if (scan.fast) "اسکن سریع…" else "اسکن کامل…") else "اسکن مسیر بازی", style = T.strong.copy(fontSize = 14.sp), color = K.champagne)
                 Text(
                     when {
                         scan.running && scan.phase == 1 -> "پیدا کردن گره‌ها · ${percent(scan.done, scan.total)} · ${fa(scan.found)} جواب"
                         scan.running -> "تشخیص شهر · ${fa(scan.done)} از ${fa(scan.total)}"
                         scan.error != null -> scan.error!!
-                        scan.hits.isEmpty() -> "ترکیه و آلمان، به ترتیب پینگ و ثبات"
+                        scan.hits.isEmpty() -> "سریع: حدود یک دقیقه · کامل: دقیق‌تر"
                         else -> "شبکه: " + scan.network.removePrefix("cell:").replace("wifi", "وای‌فای")
                     },
                     style = T.small.copy(fontSize = 11.sp), color = if (scan.error != null && !scan.running) K.ember else K.rose, maxLines = 1,
                 )
             }
-            if (!scan.running) Text("اسکن", style = T.small, color = if (enabled) K.amber else K.rose)
+            if (!scan.running) {
+                SmallButton("سریع", K.amber, enabled) { onGameScan(true) }
+                Spacer(Modifier.width(6.dp))
+                SmallButton("کامل", K.rose, enabled) { onGameScan(false) }
+            }
         }
         if (scan.running) {
             Spacer(Modifier.height(6.dp))
@@ -577,24 +579,21 @@ private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) 
         // results: Turkey | Germany
         val tr = Colos.turkey(scan.hits)
         val de = Colos.germanyFirst(scan.hits)
-        val rest = Colos.others(scan.hits)
+        val rest = Colos.otherCountries(scan.hits)
         if (scan.hits.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CountryColumn(Modifier.weight(1f), "TR", "ترکیه", tr, chosen, enabled && !scan.running) { GameEngine.pick(ctx, it) }
                 CountryColumn(Modifier.weight(1f), "DE", "آلمان", de, chosen, enabled && !scan.running) { GameEngine.pick(ctx, it) }
             }
-            if (rest.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { more = !more }.padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("جاهای دیگر (${fa(rest.size)})", style = T.small, color = K.rose, modifier = Modifier.weight(1f))
-                    Icon(Ic.chevronDown, null, tint = K.rose, modifier = Modifier.size(18.dp))
-                }
-                AnimatedVisibility(more) {
-                    Column { rest.forEach { HitRow(it, it.endpoint == chosen, enabled && !scan.running) { GameEngine.pick(ctx, it) } } }
+            // every other country found, two to a row, each with its flag
+            rest.chunked(2).forEach { row ->
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { (cc, list) ->
+                        CountryColumn(Modifier.weight(1f), cc, Colos.countryName(cc), list, chosen, enabled && !scan.running, 2) { GameEngine.pick(ctx, it) }
+                    }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -624,15 +623,16 @@ private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) 
 @Composable
 private fun CountryColumn(
     modifier: Modifier, cc: String, name: String, hits: List<WgScan.Hit>, chosen: String?, enabled: Boolean,
+    max: Int = 4,
     onPick: (WgScan.Hit) -> Unit,
 ) {
     Column(modifier) {
-        Text("${flag(cc)}  $name", style = T.small, color = K.champagne)
+        Text(listOfNotNull(flag(cc), name).joinToString("  "), style = T.small, color = K.champagne)
         Spacer(Modifier.height(4.dp))
         if (hits.isEmpty()) {
             Text("پیدا نشد", style = T.small.copy(fontSize = 11.sp), color = K.rose)
         }
-        hits.take(4).forEach { HitRow(it, it.endpoint == chosen, enabled) { onPick(it) } }
+        hits.take(max).forEach { HitRow(it, it.endpoint == chosen, enabled) { onPick(it) } }
     }
 }
 

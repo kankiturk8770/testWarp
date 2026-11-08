@@ -3,6 +3,9 @@ package cafe.kankipro.warp
 import android.Manifest
 import android.net.VpnService
 import android.os.Build
+import cafe.kankipro.warp.ui.Tab
+import cafe.kankipro.warp.core.ZeroTrust
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -40,6 +43,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
         var options by mutableStateOf(Prefs.options(this))
+        // opened from Cloudflare's Zero Trust enrolment link: join, in gamer mode, on the settings tab
+        val fromLink = zeroTrustLink(intent)
+        if (fromLink && !options.gamer) { options = options.copy(gamer = true); Prefs.save(this, options) }
         setContent {
             KankiTheme {
                 Box(Modifier.fillMaxSize().background(K.night).safeDrawingPadding()) {
@@ -47,7 +53,8 @@ class MainActivity : ComponentActivity() {
                         options = options,
                         onOptions = { options = it; Prefs.save(this@MainActivity, it) },
                         onToggle = { toggle() },
-                        onGameScan = { withVpn { GameEngine.startScan(applicationContext, Prefs.options(this@MainActivity).gameTransport) } },
+                        initialTab = if (fromLink) Tab.SETTINGS else Tab.HOME,
+                        onGameScan = { fast -> withVpn { GameEngine.startScan(applicationContext, Prefs.options(this@MainActivity).gameTransport, fast) } },
                         onForget = {
                             lifecycleScope.launch { Engine.remakeAccount(applicationContext, options.transport) }
                         },
@@ -55,6 +62,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        zeroTrustLink(intent)
+    }
+
+    /** True when [intent] is the com.cloudflare.warp:// link of a Zero Trust enrolment; joins with it. */
+    private fun zeroTrustLink(intent: Intent?): Boolean {
+        val link = intent?.data?.takeIf { it.scheme == "com.cloudflare.warp" } ?: return false
+        ZeroTrust.join(applicationContext, link.toString())
+        return true
     }
 
     private fun toggle() {

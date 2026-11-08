@@ -88,13 +88,15 @@ object GameEngine {
         val error: String? = null,
         /** 1: finding gateways that answer; 2: a short real connection to each, to learn its city. */
         val phase: Int = 1,
+        /** The quick scan: fewer addresses and samples, about a minute. */
+        val fast: Boolean = false,
     )
 
     /** The gamer scan for [transport] (Amnezia scans with its disguise): best paths of this network. */
-    fun startScan(ctx: Context, transport: Transport) {
+    fun startScan(ctx: Context, transport: Transport, fast: Boolean = false) {
         if (_scan.value.running) return
         val net = networkKey(ctx)
-        _scan.value = ScanState(running = true, network = net, hits = Prefs.gameHits(ctx, net))
+        _scan.value = ScanState(running = true, network = net, hits = Prefs.gameHits(ctx, net), fast = fast)
         scope.launch {
             val err = Engine.register(ctx, Transport.WIREGUARD)
             val id = WarpWg.load(ctx)
@@ -105,12 +107,14 @@ object GameEngine {
             val disguise = transport == Transport.AMNEZIA
             // Phase 1: a wide sweep (about 1500 of WARP's ~96,000 address:port pairs), real handshakes.
             val found = runCatching {
-                WgScan.scan(id, disguise, wide = 2000, keep = 16, samples = 8) { d, t, f ->
+                // Quick: ~600 pairs (about 8 s of handshakes), the best 10, 4 samples each; full: 2000 / 16 / 8.
+                val (wide, keep, samples) = if (fast) Triple(600, 10, 4) else Triple(2000, 16, 8)
+                WgScan.scan(id, disguise, wide = wide, keep = keep, samples = samples) { d, t, f ->
                     _scan.value = _scan.value.copy(done = d, total = t, found = f, phase = 1)
                 }
             }.getOrElse { emptyList() }
             // Phase 2: the city of each, by connecting for a moment and asking Cloudflare where we came out.
-            val located = if (found.isEmpty()) emptyList() else locate(ctx, id, disguise, found)
+            val located = if (found.isEmpty()) emptyList() else locate(ctx, id, disguise, found, if (fast) 4000 else 6000)
             val hits = (located.ifEmpty { found }).sortedWith(compareBy({ it.country !in setOf("DE", "TR") }, { it.score }))
             if (hits.isNotEmpty()) Prefs.saveGameHits(ctx, net, hits)
             _scan.value = _scan.value.copy(
@@ -125,21 +129,27 @@ object GameEngine {
      * answered, and measures the ping a game would see (DNS round trip through the tunnel). Anycast
      * means only a real connection can tell; the handshake alone cannot.
      */
-    private suspend fun locate(ctx: Context, id: WarpWg, disguise: Boolean, hits: List<WgScan.Hit>): List<WgScan.Hit> {
-        val out = ArrayList<WgScan.Hit>()
-        for ((n, h) in hits.withIndex()) {
-            _scan.value = _scan.value.copy(phase = 2, done = n, total = hits.size, found = out.size)
+    private suspend fun locate(
+        ctx: Context, id: WarpWg, disguise: Boolean, hits: List<WgScan.Hit>, waitMs: Long,
+    ): List<WgScan.Hit> {
+        // Anycast is routed per address range: one gateway of each /24 tells the city of all of it,
+        // so only the best of each range is connected to; the rest take its city. Much quicker.
+        val range = { h: WgScan.Hit -> h.endpoint.substringBeforeLast(':').substringBeforeLast('.') }
+        val heads = hits.groupBy(range).values.map { it.first() }
+        val city = HashMap<String, Pair<String, Int>>() // range → (colo, dns ping)
+        for ((n, h) in heads.withIndex()) {
+            _scan.value = _scan.value.copy(phase = 2, done = n, total = heads.size, found = city.size)
             try {
                 up(ctx, id.config(h.endpoint, disguise))
                 var e: Probe.Egress? = null
-                val until = SystemClock.elapsedRealtime() + 6000
+                val until = SystemClock.elapsedRealtime() + waitMs
                 while (e == null && SystemClock.elapsedRealtime() < until) {
                     e = Probe.direct(2000)
                     if (e == null) delay(200)
                 }
                 if (e != null) {
                     val ping = Probe.dnsPing(3, 1200)?.toInt() ?: h.pingMs
-                    out += h.copy(colo = e.colo.uppercase(), pingMs = ping)
+                    city[range(h)] = e.colo.uppercase() to ping
                     Engine.note("scan: ${h.endpoint} → ${e.colo} ${ping}ms")
                 }
             } catch (e: Exception) {
@@ -148,8 +158,12 @@ object GameEngine {
                 runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
             }
         }
-        _scan.value = _scan.value.copy(done = hits.size, found = out.size)
-        return out
+        _scan.value = _scan.value.copy(done = heads.size, found = city.size)
+        return hits.mapNotNull { h ->
+            val (colo, ping) = city[range(h)] ?: return@mapNotNull null
+            // the one connected to has the real in-tunnel ping; the others keep their handshake ping
+            if (h in heads) h.copy(colo = colo, pingMs = ping) else h.copy(colo = colo)
+        }
     }
 
     /** Makes [hit] this network's first choice (the one connect uses). */

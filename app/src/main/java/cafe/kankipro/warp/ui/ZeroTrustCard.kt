@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.sp
 import cafe.kankipro.warp.core.ZeroTrust
 
 /**
- * The gamer's Zero Trust card: team name and email, then the code from the email; once joined,
+ * The gamer's Zero Trust card: one field for the enrolment link or token; once joined,
  * the team name and a «حذف» key. While it is off nothing changes: the gamer uses personal WARP.
  */
 @Composable
@@ -40,9 +40,7 @@ fun ZeroTrustCard(locked: Boolean) {
     val ctx = LocalContext.current
     val z by ZeroTrust.state.collectAsState()
     LaunchedEffect(Unit) { ZeroTrust.refresh(ctx) }
-    var team by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
+    var link by remember { mutableStateOf("") }
     val on = z.step == ZeroTrust.Step.ON
     Column(
         Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(K.wine)
@@ -55,7 +53,7 @@ fun ZeroTrustCard(locked: Boolean) {
         Spacer(Modifier.height(4.dp))
         Text(
             if (on) "اول با تیم وصل می‌شود؛ اگر نشد خودش برمی‌گردد به WARP."
-            else "با تیم Zero Trust خودت؛ اگر کار نکرد، WARP مثل قبل.",
+            else "لینک یا توکن Zero Trust را بگذار؛ اگر کار نکرد، WARP مثل قبل.",
             style = T.small, color = K.rose,
         )
         Spacer(Modifier.height(10.dp))
@@ -65,23 +63,11 @@ fun ZeroTrustCard(locked: Boolean) {
                 Spacer(Modifier.height(8.dp))
                 SmallButton("حذف", K.ember, !locked) { ZeroTrust.remove(ctx) }
             }
-            ZeroTrust.Step.CODE -> {
-                Field("کد ایمیل", code, KeyboardType.Number) { code = it.filter(Char::isLetterOrDigit).take(12) }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SmallButton("ثبت", K.gold, code.length >= 4) { ZeroTrust.submitCode(ctx, code) }
-                    SmallButton("لغو", K.rose, true) { code = ""; ZeroTrust.cancel(ctx) }
-                }
-            }
             ZeroTrust.Step.WORKING -> Unit
             ZeroTrust.Step.OFF -> {
-                Field("اسم تیم (team)", team, KeyboardType.Uri) { team = it.trim() }
-                Spacer(Modifier.height(6.dp))
-                Field("ایمیل", email, KeyboardType.Email) { email = it.trim() }
+                Field("لینک com.cloudflare.warp://… یا توکن", link, KeyboardType.Uri) { link = it.trim() }
                 Spacer(Modifier.height(8.dp))
-                SmallButton("گرفتن کد", K.gold, !locked && team.isNotBlank() && "@" in email) {
-                    ZeroTrust.requestCode(ctx, team, email)
-                }
+                SmallButton("ثبت", K.gold, !locked && link.length >= 32) { ZeroTrust.join(ctx, link) }
             }
         }
         if (z.message.isNotEmpty()) {
