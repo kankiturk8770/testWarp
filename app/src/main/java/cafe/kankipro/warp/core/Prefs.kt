@@ -16,10 +16,12 @@ object Prefs {
     fun gameHits(ctx: Context, network: String): List<WgScan.Hit> =
         sp(ctx).getString("game:$network", null).orEmpty().lines().mapNotNull { l ->
             val p = l.split(',')
-            if (p.size != 4) null else runCatching { WgScan.Hit(p[0], p[1].toInt(), p[2].toInt(), p[3].toInt()) }.getOrNull()
+            if (p.size < 4) null else runCatching {
+                WgScan.Hit(p[0], p[1].toInt(), p[2].toInt(), p[3].toInt(), p.getOrNull(4).orEmpty())
+            }.getOrNull()
         }
 
     fun saveGameHits(ctx: Context, network: String, hits: List<WgScan.Hit>) = sp(ctx).edit()
-        .putString("game:$network", hits.joinToString("\n") { "${it.endpoint},${it.pingMs},${it.jitterMs},${it.lossPct}" })
+        .putString("game:$network", hits.joinToString("\n") { "${it.endpoint},${it.pingMs},${it.jitterMs},${it.lossPct},${it.colo}" })
         .apply()
 }

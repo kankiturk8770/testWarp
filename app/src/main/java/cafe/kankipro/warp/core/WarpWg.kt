@@ -33,12 +33,12 @@ data class WarpWg(
      * An AmneziaWG config for [endpoint]. [disguise] adds the Amnezia junk packets Cloudflare's plain
      * server drops unread; the size fields S1..S4 stay 0, those a plain server cannot read.
      */
-    fun config(endpoint: String, disguise: Boolean, mtu: Int = 1280): String = buildString {
+    fun config(endpoint: String, disguise: Boolean, mtu: Int = 1280, dns: List<String> = listOf("1.1.1.1", "1.0.0.1")): String = buildString {
         appendLine("[Interface]")
         appendLine("PrivateKey = $privateKey")
         appendLine("Address = " + listOfNotNull(ipv4.takeIf { it.isNotBlank() }?.let { slash(it, 32) },
             ipv6.takeIf { it.isNotBlank() }?.let { slash(it, 128) }).joinToString(", "))
-        appendLine("DNS = 1.1.1.1, 1.0.0.1")
+        appendLine("DNS = " + dns.joinToString(", "))
         appendLine("MTU = $mtu")
         if (disguise) {
             // Signature packets sent before each handshake (AmneziaWG 1.5), the same idea as the core's

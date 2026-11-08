@@ -29,6 +29,12 @@ enum class Scan(val title: String, val value: String) {
     IRONCLAD("با تونل واقعی", "ironclad");
 }
 
+/** The DNS the phone asks through the tunnel. AdGuard answers ad and tracker names with nothing: fewer ads, less data. */
+enum class Dns(val title: String, val servers: List<String>) {
+    CLOUDFLARE("کلادفلر", listOf("1.1.1.1", "1.0.0.1")),
+    ADGUARD("AdGuard · بدون تبلیغ", listOf("94.140.14.14", "94.140.15.15")),
+}
+
 enum class IpFamily(val title: String, val value: String) {
     V4("IPv4", "v4"), V6("IPv6", "v6"), BOTH("هر دو", "both");
 }
@@ -53,6 +59,7 @@ data class Options(
      * 40-byte pieces 10 ms apart, a full gateway scan, then Amnezia and Gool if it does not answer.
      */
     val iran: Boolean = false,
+    val dns: Dns = Dns.CLOUDFLARE,
     val gameTransport: Transport = Transport.AMNEZIA,
 ) {
     /** The core's arguments: one SOCKS5 listener on the loopback, identity kept in [configPath]. */
@@ -90,6 +97,7 @@ data class Options(
         .put("pinPing", JSONObject().apply { pinPing.forEach { (t, v) -> put(t.name, v) } })
         .put("gamer", gamer)
         .put("iran", iran)
+        .put("dns", dns.name)
         .put("gameTransport", gameTransport.name)
         .toString()
 
@@ -113,6 +121,7 @@ data class Options(
                     } ?: emptyMap(),
                     gamer = j.optBoolean("gamer", false),
                     iran = j.optBoolean("iran", false),
+                    dns = Dns.entries.firstOrNull { it.name == j.optString("dns") } ?: Dns.CLOUDFLARE,
                     gameTransport = Transport.of(j.optString("gameTransport"))
                         ?.takeIf { it == Transport.AMNEZIA || it == Transport.WIREGUARD } ?: Transport.AMNEZIA,
                 )

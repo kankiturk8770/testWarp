@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.SystemClock
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
@@ -39,6 +40,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -57,22 +59,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cafe.kankipro.warp.core.Colos
 import cafe.kankipro.warp.core.ConnState
+import cafe.kankipro.warp.core.Dns
 import cafe.kankipro.warp.core.Engine
 import cafe.kankipro.warp.core.GameEngine
 import cafe.kankipro.warp.core.IpFamily
@@ -82,6 +88,7 @@ import cafe.kankipro.warp.core.PinScan
 import cafe.kankipro.warp.core.Scan
 import cafe.kankipro.warp.core.Stage
 import cafe.kankipro.warp.core.Transport
+import cafe.kankipro.warp.core.WgScan
 import kotlinx.coroutines.delay
 
 enum class Tab(val title: String) { HOME("اتصال"), SETTINGS("تنظیمات"), LOG("گزارش") }
@@ -93,38 +100,43 @@ fun App(
     onToggle: () -> Unit,
     onForget: () -> Unit,
     initialTab: Tab = Tab.HOME,
+    onGameScan: () -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(initialTab) }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Column(Modifier.fillMaxSize().background(K.night)) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
-                    Tab.HOME -> Home(options, onOptions, onToggle)
+                    Tab.HOME -> Home(options, onOptions, onToggle, onGameScan)
                     Tab.SETTINGS -> Settings(options, onOptions, onForget)
                     Tab.LOG -> LogScreen(options)
                 }
             }
-            NavBar(tab) { tab = it }
+            NavBar(tab, options.gamer) { tab = it }
         }
     }
 }
 
 @Composable
-private fun NavBar(tab: Tab, onTab: (Tab) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().background(K.wine).padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-    ) {
-        Tab.entries.forEach { t ->
-            val on = t == tab
-            Column(
-                Modifier.clip(RoundedCornerShape(12.dp)).clickable { onTab(t) }
-                    .heightIn(min = 44.dp).padding(horizontal = 20.dp, vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(t.title, style = T.strong, color = if (on) K.gold else K.rose)
-                Spacer(Modifier.height(4.dp))
-                Box(Modifier.size(width = 20.dp, height = 3.dp).clip(CircleShape).background(if (on) K.gold else Color.Transparent))
+private fun NavBar(tab: Tab, gamer: Boolean, onTab: (Tab) -> Unit) {
+    val accent = if (gamer) K.amber else K.gold
+    Column {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(K.wineLine))
+        Row(
+            Modifier.fillMaxWidth().background(K.night).padding(horizontal = 24.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+        ) {
+            Tab.entries.forEach { t ->
+                val on = t == tab
+                Column(
+                    Modifier.clip(RoundedCornerShape(10.dp)).clickable { onTab(t) }
+                        .heightIn(min = 40.dp).padding(horizontal = 18.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(t.title, style = T.small.copy(fontSize = 13.sp), color = if (on) accent else K.rose)
+                    Spacer(Modifier.height(3.dp))
+                    Box(Modifier.size(width = 14.dp, height = 2.dp).clip(CircleShape).background(if (on) accent else Color.Transparent))
+                }
             }
         }
     }
@@ -133,217 +145,263 @@ private fun NavBar(tab: Tab, onTab: (Tab) -> Unit) {
 // ---------------------------------------------------------------- home
 
 @Composable
-private fun Home(options: Options, onOptions: (Options) -> Unit, onToggle: () -> Unit) {
+private fun Home(options: Options, onOptions: (Options) -> Unit, onToggle: () -> Unit, onGameScan: () -> Unit) {
     val s by Engine.state.collectAsState()
     var showAll by remember { mutableStateOf(false) }
     val running = s.phase == Phase.RUNNING
     val free = s.phase == Phase.IDLE || s.phase == Phase.ERROR
+    val gamer = if (running || s.phase == Phase.CONNECTING) s.gamer else options.gamer
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("کانکی وارپ", style = T.title, color = K.champagne)
+        // top bar: wordmark, and Iran mode for the normal user
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    "KANKI WARP",
+                    style = T.title.copy(fontSize = 15.sp, letterSpacing = 3.sp, textDirection = TextDirection.Ltr),
+                    color = K.champagne,
+                )
+            }
             Spacer(Modifier.weight(1f))
-            Text(if (s.egress?.warp == "plus") "WARP+" else "WARP", style = T.small, color = K.rose)
+            if (!gamer) IranChip(options.iran, free) { onOptions(options.copy(iran = it)) }
         }
-        Spacer(Modifier.height(8.dp))
-        Portal(s, 248.dp, onToggle)
-        Spacer(Modifier.height(16.dp))
-        Headline(s)
+        ModeSwitch(options.gamer, free) { onOptions(options.copy(gamer = it)) }
         Spacer(Modifier.height(18.dp))
-        Pipeline(s)
-        Spacer(Modifier.height(22.dp))
+        Portal(s.copy(gamer = gamer), 216.dp, onToggle)
+        Spacer(Modifier.height(14.dp))
+        Status(s, options)
+        Spacer(Modifier.height(14.dp))
+        Pipeline(s.copy(gamer = gamer))
+        Spacer(Modifier.height(18.dp))
         if (running) {
             InfoGrid(s)
-            Spacer(Modifier.height(16.dp))
-            ActiveCard(s, options)
-            Spacer(Modifier.height(8.dp))
-            SmallButton(if (showAll) "بستن فهرست" else "نمایش همه‌ی پروتکل‌ها", K.rose, true) { showAll = !showAll }
+            Spacer(Modifier.height(10.dp))
+            SmallButton(if (showAll) "بستن" else "پروتکل‌ها", K.rose, true) { showAll = !showAll }
             if (showAll) {
-                Spacer(Modifier.height(12.dp))
-                if (options.gamer) GamerPanel(options, false, onOptions) else TransportPicker(options, false, onOptions)
+                Spacer(Modifier.height(10.dp))
+                if (options.gamer) GamerPanel(options, false, onOptions, onGameScan) else ProtocolGrid(options, false, onOptions)
             }
+        } else if (options.gamer) {
+            GamerPanel(options, free, onOptions, onGameScan)
         } else {
-            ModeSwitch(options.gamer, free) { onOptions(options.copy(gamer = it)) }
-            if (options.gamer) {
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(K.amber))
-                    Spacer(Modifier.width(6.dp))
-                    Text("حالت تأخیر کم و ضد افت بسته فعال است", style = T.small, color = K.amber)
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            if (options.gamer) GamerPanel(options, free, onOptions) else TransportPicker(options, free, onOptions)
+            ProtocolGrid(options, free, onOptions)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
+    }
+}
+
+/** A small «ایران» checkbox; its arrow opens one paragraph that closes itself after five seconds. */
+@Composable
+private fun IranChip(on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    var info by remember { mutableStateOf(false) }
+    LaunchedEffect(info) { if (info) { delay(5000); info = false } }
+    Column(horizontalAlignment = Alignment.End) {
+        Row(
+            Modifier.clip(RoundedCornerShape(18.dp)).background(if (on) K.ok.copy(alpha = 0.12f) else K.wine)
+                .border(1.dp, if (on) K.ok else K.wineLine, RoundedCornerShape(18.dp)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                Modifier.clickable(enabled = enabled) { onChange(!on) }.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(if (on) K.ok else Color.Transparent)
+                        .border(1.5.dp, if (on) K.ok else K.rose, RoundedCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { if (on) Icon(Ic.check, null, tint = K.night, modifier = Modifier.size(12.dp)) }
+                Spacer(Modifier.width(6.dp))
+                Text("ایران", style = T.small, color = if (on) K.ok else K.champagne)
+            }
+            Box(
+                Modifier.clickable { info = !info }.padding(start = 2.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ic.info, "توضیح", tint = K.rose, modifier = Modifier.size(16.dp)) }
+        }
+    }
+    if (info) {
+        AlertLikeTip(
+            "حالت ایران: اول MASQUE · HTTP/2 روی پورت ۴۴۳ که شبیه یک سایت معمولی است، با دست‌دادن تکه‌تکه و اسکن کامل دروازه؛ " +
+                "اگر نشد Amnezia و بعد Gool. اتصال اول کندتر است."
+        ) { info = false }
     }
 }
 
 @Composable
-private fun Headline(s: ConnState) {
-    val title = when (s.phase) {
-        Phase.RUNNING -> "وصل هستی"
-        Phase.CONNECTING -> "در حال اتصال"
-        Phase.STOPPING -> "در حال قطع"
-        Phase.ERROR -> "وصل نشد"
-        Phase.IDLE -> "وصل نیستی"
-    }
-    Text(title, style = T.big, color = if (s.phase == Phase.ERROR) K.ember else K.champagne)
-    if (s.phase == Phase.RUNNING) {
-        var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
-        LaunchedEffect(s.startedAt) { while (true) { now = SystemClock.elapsedRealtime(); delay(1000) } }
-        Text(clock(((now - s.startedAt) / 1000).coerceAtLeast(0)), style = T.mono,
-            color = if (s.gamer) K.amber else K.gold)
-        Text((s.actual.ifBlank { s.transport?.title.orEmpty() }) + if (s.gamer) " · گیمر" else "", style = T.small,
-            color = if ("ساده" in s.actual && s.transport == Transport.AMNEZIA) K.amber else K.rose)
-        return
-    }
-    val sub = when (s.phase) {
-        Phase.CONNECTING -> s.message
-        Phase.ERROR -> s.error.orEmpty()
-        else -> "دکمه را بزن؛ اولین بار یک اکانت رایگان WARP ساخته می‌شود."
-    }
-    Spacer(Modifier.height(4.dp))
-    Text(sub, style = T.body, color = K.rose, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-    if (s.phase == Phase.CONNECTING && s.attempts > 1) {
-        Spacer(Modifier.height(4.dp))
-        Text(
-            (if (s.gamer) "دروازه‌ی" else "پروتکل") + " ${fa(s.attempt)} از ${fa(s.attempts)}" +
-                (if (s.gamer) "" else ": ${s.transport?.title.orEmpty()}"),
-            style = T.small, color = K.gold,
-        )
+private fun AlertLikeTip(text: String, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        containerColor = K.wine,
+        text = { Text(text, style = T.body, color = K.champagne) },
+        confirmButton = { TextButton(onClose) { Text("باشه", style = T.strong, color = K.gold) } },
+    )
+}
+
+/** «عادی» or «گیمر»: one capsule, the pill slides to the chosen side. */
+@Composable
+private fun ModeSwitch(gamer: Boolean, enabled: Boolean, onPick: (Boolean) -> Unit) {
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(22.dp)).background(K.wine)
+            .border(1.dp, K.wineLine, RoundedCornerShape(22.dp)).padding(3.dp)
+    ) {
+        val half = maxWidth / 2
+        val x by animateDpAsState(if (gamer) half else 0.dp, tween(240), label = "pill")
+        val pill by animateColorAsState(if (gamer) K.amber else K.gold, tween(240), label = "pillColor")
+        Box(Modifier.offset(x = x).width(half).fillMaxHeight().clip(RoundedCornerShape(19.dp)).background(pill))
+        Row(Modifier.fillMaxSize()) {
+            listOf(Triple(false, "عادی", Ic.shield), Triple(true, "گیمر", Ic.gamepad)).forEach { (g, name, icon) ->
+                val on = g == gamer
+                Row(
+                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(19.dp)).clickable(enabled = enabled) { onPick(g) },
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, null, tint = if (on) K.night else K.rose, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(name, style = T.strong.copy(fontSize = 14.sp), color = if (on) K.night else K.champagne)
+                }
+            }
+        }
     }
 }
 
-/**
- * The four stages as one line: a stage turns gold when proven and the line to the next one fills
- * with it; the stage being worked on blinks; a failed one is red.
- */
+/** Under the button: the state in one word, then where the connection goes (or is going). */
+@Composable
+private fun Status(s: ConnState, options: Options) {
+    val ctx = LocalContext.current
+    val title = when (s.phase) {
+        Phase.RUNNING -> "وصل"
+        Phase.CONNECTING -> "در حال اتصال"
+        Phase.STOPPING -> "در حال قطع"
+        Phase.ERROR -> "وصل نشد"
+        Phase.IDLE -> "آماده"
+    }
+    Text(title, style = T.big.copy(fontSize = 24.sp), color = if (s.phase == Phase.ERROR) K.ember else K.champagne)
+    when (s.phase) {
+        Phase.RUNNING -> {
+            var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+            LaunchedEffect(s.startedAt) { while (true) { now = SystemClock.elapsedRealtime(); delay(1000) } }
+            Text(clock(((now - s.startedAt) / 1000).coerceAtLeast(0)), style = T.mono.copy(fontSize = 18.sp),
+                color = if (s.gamer) K.amber else K.gold)
+            Spacer(Modifier.height(2.dp))
+            Text(destination(s.egress?.colo, s.egress?.pingMs?.toInt()) + "  ·  " + s.actual.ifBlank { s.transport?.title.orEmpty() },
+                style = T.small, color = K.rose, textAlign = TextAlign.Center)
+        }
+        Phase.CONNECTING -> Text(s.message, style = T.small, color = K.rose, textAlign = TextAlign.Center)
+        Phase.ERROR -> Text(s.error.orEmpty(), style = T.small, color = K.rose, textAlign = TextAlign.Center)
+        else -> {
+            // what the button will connect to
+            val line = if (options.gamer) {
+                val best = remember(options.gamer) { cafe.kankipro.warp.core.Prefs.gameHits(ctx, GameEngine.networkKey(ctx)).firstOrNull() }
+                val scan by GameEngine.scan.collectAsState()
+                val top = scan.hits.firstOrNull() ?: best
+                if (top == null) "اول مسیر بازی را اسکن کن" else destination(top.colo, top.pingMs) + "  ·  ${options.gameTransport.title}"
+            } else {
+                val pin = options.pins[options.transport]
+                if (options.iran) "حالت ایران · MASQUE · HTTP/2 ← Amnezia ← Gool"
+                else options.transport.title + (pin?.let { "  ·  آی‌پی ثابت" + (options.pinPing[options.transport]?.let { " $it ms" } ?: "") } ?: "")
+            }
+            Text(line, style = T.small, color = K.rose, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+/** «🇩🇪 فرانکفورت · 82 ms», or what part of it is known. */
+private fun destination(colo: String?, ping: Int?): String {
+    val c = colo?.uppercase().orEmpty()
+    val flag = when (Colos.country(c)) { "DE" -> flag("DE"); "TR" -> flag("TR"); else -> null }
+    val city = Colos.NAMES[c] ?: c.ifBlank { null }
+    return listOfNotNull(listOfNotNull(flag, city).joinToString(" ").ifBlank { null }, ping?.let { ltr("$it ms") }).joinToString("  ·  ")
+}
+
+/** The four stages as one line: lit when proven, the current one blinks, a failed one is red. */
 @Composable
 private fun Pipeline(s: ConnState) {
     val blink by rememberInfiniteTransition(label = "blink")
         .animateFloat(0.3f, 1f, infiniteRepeatable(tween(650), RepeatMode.Reverse), label = "a")
-    val gold = if (s.gamer) K.amber else K.gold
+    val accent = if (s.gamer) K.amber else K.gold
     val stages = Stage.entries
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 30.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 34.dp), verticalAlignment = Alignment.CenterVertically) {
             stages.forEachIndexed { i, _ ->
                 val proven = i < s.proven
                 val current = s.phase == Phase.CONNECTING && i == s.proven
                 val failed = s.phase == Phase.ERROR && i == s.proven
-                val color = when {
-                    proven -> gold
-                    failed -> K.ember
-                    current -> K.champagne
-                    else -> K.wineLine
-                }
                 Box(
-                    Modifier.size(if (current) 12.dp else 10.dp).alpha(if (current) blink else 1f)
-                        .clip(CircleShape).background(color)
+                    Modifier.size(8.dp).alpha(if (current) blink else 1f).clip(CircleShape)
+                        .background(when { proven -> accent; failed -> K.ember; current -> K.champagne; else -> K.wineLine })
                 )
                 if (i < stages.size - 1) {
-                    Box(Modifier.weight(1f).height(2.dp).background(if (i + 1 < s.proven || (proven && i + 1 == s.proven)) gold else K.wineLine))
+                    Box(Modifier.weight(1f).height(1.5.dp).background(if (i + 1 <= s.proven) accent else K.wineLine))
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(5.dp))
         Row(Modifier.fillMaxWidth()) {
             stages.forEachIndexed { i, st ->
-                val color = when {
-                    i < s.proven -> gold
-                    s.phase == Phase.ERROR && i == s.proven -> K.ember
-                    s.phase == Phase.CONNECTING && i == s.proven -> K.champagne
-                    else -> K.rose.copy(alpha = 0.6f)
-                }
-                Text(st.title, style = T.small, color = color, textAlign = TextAlign.Center, modifier = Modifier.weight(1f),
-                    maxLines = 1)
+                Text(
+                    st.title, style = T.small.copy(fontSize = 11.sp),
+                    color = when {
+                        i < s.proven -> accent
+                        s.phase == Phase.ERROR && i == s.proven -> K.ember
+                        s.phase == Phase.CONNECTING && i == s.proven -> K.champagne
+                        else -> K.rose.copy(alpha = 0.7f)
+                    },
+                    textAlign = TextAlign.Center, modifier = Modifier.weight(1f), maxLines = 1,
+                )
             }
         }
     }
 }
 
-/** «کاربر عادی» or «کاربر گیمر»: one capsule, the gold pill slides to the chosen side. */
-@Composable
-private fun ModeSwitch(gamer: Boolean, enabled: Boolean, onPick: (Boolean) -> Unit) {
-    BoxWithConstraints(
-        Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(26.dp)).background(K.wine)
-            .border(1.dp, if (gamer) K.amber.copy(alpha = 0.6f) else K.wineLine, RoundedCornerShape(26.dp)).padding(4.dp)
-    ) {
-        val half = maxWidth / 2
-        // RTL: «عادی» is on the right (start), «گیمر» on the left
-        val x by animateDpAsState(if (gamer) half else 0.dp, tween(260), label = "pill")
-        val pill by animateColorAsState(if (gamer) K.amber else K.gold, tween(260), label = "pillColor")
-        Box(Modifier.offset(x = x).width(half).fillMaxHeight().clip(RoundedCornerShape(22.dp)).background(pill))
-        Row(Modifier.fillMaxSize()) {
-            listOf(false to "کاربر عادی", true to "کاربر گیمر 🎮").forEach { (g, name) ->
-                Box(
-                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(22.dp))
-                        .clickable(enabled = enabled) { onPick(g) },
-                    contentAlignment = Alignment.Center,
-                ) { Text(name, style = T.strong, color = if (g == gamer) K.night else K.champagne) }
-            }
-        }
-    }
-}
-
-/** Connected: two tiles (ping and place; speed and total) and one full-width tile of addresses. */
+/** Connected: ping and city, speed and total, and the two addresses (tap to copy). */
 @Composable
 private fun InfoGrid(s: ConnState) {
     val t by Engine.traffic.collectAsState()
     val ctx = LocalContext.current
     val e = s.egress
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Tile(Modifier.weight(1f), "پینگ") {
                 val ping = e?.pingMs?.toInt()
                 Text(ping?.let { "$it ms" } ?: "—", style = T.title.copy(textDirection = TextDirection.Ltr), color = pingColor(ping))
-                Text(
-                    listOfNotNull(e?.loc?.let(::flag), e?.loc?.takeIf { it.isNotBlank() },
-                        e?.colo?.takeIf { it.isNotBlank() }?.let { "($it)" }).joinToString(" ").ifBlank { "—" },
-                    style = T.small.copy(textDirection = TextDirection.Ltr), color = K.champagne,
-                )
+                Text(destination(e?.colo, null).ifBlank { "—" }, style = T.small, color = K.champagne, maxLines = 1)
             }
             Tile(Modifier.weight(1f), "سرعت") {
-                Text("↓ ${bytes(t.downRate)}/s", style = T.strong.copy(textDirection = TextDirection.Ltr), color = K.champagne)
-                Text("↑ ${bytes(t.upRate)}/s", style = T.small.copy(textDirection = TextDirection.Ltr), color = K.rose)
-                Text("کل " + ltr(bytes(t.down + t.up)), style = T.small, color = K.rose)
+                Text("↓ ${bytes(t.downRate)}/s", style = T.strong.copy(textDirection = TextDirection.Ltr, fontSize = 15.sp), color = K.champagne)
+                Text("↑ ${bytes(t.upRate)}/s  ·  " + bytes(t.down + t.up), style = T.small.copy(textDirection = TextDirection.Ltr), color = K.rose)
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Tile(Modifier.fillMaxWidth(), "آدرس‌ها (برای کپی بزن)") {
+        Spacer(Modifier.height(8.dp))
+        Tile(Modifier.fillMaxWidth(), null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Copyable(Modifier.weight(1f), "خروجی", e?.ip, ctx)
-                Copyable(Modifier.weight(1f), "دروازه", s.gateway.ifBlank { null }, ctx)
+                Copyable(Modifier.weight(1f), "آی‌پی خروجی", e?.ip, ctx)
+                Copyable(Modifier.weight(1f), "گره ورود", s.gateway.ifBlank { null }, ctx)
             }
         }
     }
 }
 
 @Composable
-private fun Tile(modifier: Modifier, label: String, content: @Composable () -> Unit) {
+private fun Tile(modifier: Modifier, label: String?, content: @Composable () -> Unit) {
     Column(
-        modifier.clip(RoundedCornerShape(18.dp))
-            .background(Brush.verticalGradient(listOf(K.wine, K.glass)))
-            .border(1.dp, K.wineLine, RoundedCornerShape(18.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+        modifier.clip(RoundedCornerShape(14.dp)).background(K.wine).border(1.dp, K.wineLine, RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text(label, style = T.small, color = K.rose)
-        Spacer(Modifier.height(4.dp))
+        if (label != null) {
+            Text(label, style = T.small.copy(fontSize = 11.sp), color = K.rose)
+            Spacer(Modifier.height(2.dp))
+        }
         content()
     }
 }
 
 @Composable
 private fun Copyable(modifier: Modifier, label: String, value: String?, ctx: Context) {
-    Column(
-        modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = value != null) {
-            copy(ctx, value.orEmpty())
-        }.padding(vertical = 4.dp)
-    ) {
-        Text(label, style = T.small, color = K.rose)
-        Text(value ?: "—", style = T.strong.copy(textDirection = TextDirection.Ltr, fontSize = 14.sp), color = K.champagne,
+    Column(modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = value != null) { copy(ctx, value.orEmpty()) }.padding(vertical = 2.dp)) {
+        Text(label, style = T.small.copy(fontSize = 11.sp), color = K.rose)
+        Text(value ?: "—", style = T.strong.copy(textDirection = TextDirection.Ltr, fontSize = 13.sp), color = K.champagne,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -357,269 +415,249 @@ private fun copy(ctx: Context, text: String) {
 private fun pingColor(ms: Int?) = when {
     ms == null -> K.champagne
     ms < 100 -> K.ok
-    ms <= 180 -> K.gold
-    else -> K.amber
+    ms <= 180 -> K.warn
+    else -> K.ember
 }
 
-/** Connected: only the protocol in use, compact. */
+/** Two or three words under each protocol's name: what it is good for. */
+private fun short(t: Transport) = when (t) {
+    Transport.AMNEZIA -> "پوشش کامل"
+    Transport.WIREGUARD -> "سبک و سریع"
+    Transport.MASQUE_H2 -> "شبیه HTTPS"
+    Transport.MASQUE_H3 -> "QUIC · کم‌پینگ"
+    Transport.GOOL -> "دو لایه"
+    Transport.MIM -> "سخت‌گیرانه"
+}
+
+/** The normal user's protocols, two to a row; the white-IP scan is the small radar on each. */
 @Composable
-private fun ActiveCard(s: ConnState, options: Options) {
-    val t = s.transport ?: return
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(K.wine)
-            .border(1.dp, if (s.gamer) K.amber else K.gold, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(t.title + if (s.gamer) " گیمینگ" else "", style = T.strong, color = if (s.gamer) K.amber else K.gold)
-            val pin = options.pins[t]
-            if (s.actual.isNotBlank()) Text(s.actual, style = T.small, color = K.champagne)
-            Text(
-                when {
-                    s.gamer -> "مستقیم روی گوشی، بدون لایه‌ی اضافه"
-                    pin != null -> "آی‌پی ثابت"
-                    else -> "دروازه را هسته پیدا کرد"
-                },
-                style = T.small, color = K.rose,
-            )
+private fun ProtocolGrid(options: Options, enabled: Boolean, onOptions: (Options) -> Unit) {
+    val ctx = LocalContext.current
+    val latest by rememberUpdatedState(options)
+    val scan by PinScan.state.collectAsState()
+    val iranLocked = options.iran
+    Column(Modifier.fillMaxWidth()) {
+        Transport.entries.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { t ->
+                    val on = t == options.transport && !iranLocked
+                    val inIran = iranLocked && t in Options.IRAN
+                    val busy = scan.transport == t && scan.running
+                    val pin = options.pins[t]
+                    Column(
+                        Modifier.weight(1f).heightIn(min = 72.dp).clip(RoundedCornerShape(14.dp))
+                            .background(if (on || inIran) K.wine else Color.Transparent)
+                            .border(1.dp, when { on -> K.gold; inIran -> K.ok.copy(alpha = 0.6f); else -> K.wineLine }, RoundedCornerShape(14.dp))
+                            .clickable(enabled = enabled && !iranLocked) { onOptions(options.copy(transport = t)) }
+                            .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(t.title, style = T.strong.copy(fontSize = 14.sp), color = if (on) K.gold else K.champagne,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(short(t), style = T.small.copy(fontSize = 11.sp), color = K.rose, maxLines = 1)
+                            }
+                            if (PinScan.canScan(t)) {
+                                RadarButton(busy, enabled && !scan.running || busy, if (on) K.gold else K.rose) {
+                                    if (busy) PinScan.cancel()
+                                    else PinScan.start(ctx, t) { ep, ms ->
+                                        onOptions(latest.copy(pins = latest.pins + (t to ep), pinPing = latest.pinPing + (t to ms)))
+                                    }
+                                }
+                            }
+                        }
+                        when {
+                            busy -> Text(
+                                "${percent(scan.done, scan.total)} · ${fa(scan.found)} جواب",
+                                style = T.small.copy(fontSize = 11.sp), color = K.gold, maxLines = 1,
+                            )
+                            pin != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                options.pinPing[t]?.let { Badge("$it ms", pingColor(it)) }
+                                Spacer(Modifier.width(4.dp))
+                                Text("آی‌پی ثابت", style = T.small.copy(fontSize = 11.sp), color = K.champagne, modifier = Modifier.weight(1f), maxLines = 1)
+                                Icon(Ic.close, "حذف", tint = K.rose, modifier = Modifier.size(18.dp).clip(CircleShape).clickable(enabled = enabled) {
+                                    onOptions(options.copy(pins = options.pins - t, pinPing = options.pinPing - t))
+                                })
+                            }
+                        }
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
         }
-        Box(Modifier.size(8.dp).clip(CircleShape).background(K.ok))
+        val last = scan.result
+        if (!scan.running && last != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(last, style = T.small.copy(fontSize = 11.sp), color = if (scan.found > 0) K.ok else K.ember)
+        }
+    }
+}
+
+private fun percent(done: Int, total: Int) = if (total <= 0) "۰٪" else fa((done * 100 / total).coerceIn(0, 100)) + "٪"
+
+/** The scan key: a radar that turns when a scan runs (tap again to stop). */
+@Composable
+private fun RadarButton(busy: Boolean, enabled: Boolean, tint: Color, onClick: () -> Unit) {
+    val spin by rememberInfiniteTransition(label = "radar")
+        .animateFloat(0.35f, 1f, infiniteRepeatable(tween(500), RepeatMode.Reverse), label = "r")
+    Box(
+        Modifier.size(36.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Ic.radar, "آی‌پی سفید", tint = if (busy) K.gold.copy(alpha = spin) else if (enabled) tint else K.wineLine,
+            modifier = Modifier.size(20.dp))
     }
 }
 
 @Composable
-private fun TransportPicker(options: Options, enabled: Boolean, onOptions: (Options) -> Unit) {
+private fun Badge(text: String, color: Color) {
+    Box(
+        Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 1.dp)
+    ) { Text(text, style = T.small.copy(textDirection = TextDirection.Ltr, fontSize = 11.sp), color = color, maxLines = 1) }
+}
+
+@Composable
+private fun SmallButton(text: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, if (enabled) color else K.wineLine, RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick).heightIn(min = 32.dp).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, style = T.small, color = if (enabled) color else K.rose, maxLines = 1) }
+}
+
+/**
+ * The gamer: the scan first (it decides everything), its results as two columns, Turkey and Germany,
+ * best first (Frankfurt leads Germany), then the engine. Each result: city, ping, jitter, loss.
+ */
+@Composable
+private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) -> Unit, onGameScan: () -> Unit) {
     val ctx = LocalContext.current
-    val latest by rememberUpdatedState(options)
-    val scan by PinScan.state.collectAsState()
+    val scan by GameEngine.scan.collectAsState()
+    var more by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { GameEngine.loadSaved(ctx) }
+    val chosen = scan.hits.firstOrNull()?.endpoint
     Column(Modifier.fillMaxWidth()) {
-        // Iran mode: one switch for the setup that has the best chance on Iran's networks
+        // the scan bar
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                .background(if (options.iran) K.wine else Color.Transparent)
-                .border(1.dp, if (options.iran) K.ok else K.wineLine, RoundedCornerShape(16.dp))
-                .clickable(enabled = enabled) { onOptions(options.copy(iran = !options.iran)) }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(K.wine)
+                .border(1.dp, if (scan.running) K.amber else K.wineLine, RoundedCornerShape(14.dp))
+                .clickable(enabled = enabled && !scan.running) { onGameScan() }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(Ic.radar, null, tint = K.amber, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("🇮🇷 حالت ایران", style = T.strong, color = if (options.iran) K.ok else K.champagne)
+                Text(if (scan.running) "در حال اسکن مسیر بازی" else "اسکن مسیر بازی", style = T.strong.copy(fontSize = 14.sp), color = K.champagne)
                 Text(
-                    "اول MASQUE · HTTP/2 روی پورت ۴۴۳ (شبیه یک سایت معمولی)، دست‌دادن تکه‌تکه، اسکن کامل دروازه؛ اگر نشد Amnezia و بعد Gool. " +
-                        "اتصال اول کندتر است. برای بازی «کاربر گیمر» را بزن.",
-                    style = T.small, color = K.rose,
+                    when {
+                        scan.running && scan.phase == 1 -> "پیدا کردن گره‌ها · ${percent(scan.done, scan.total)} · ${fa(scan.found)} جواب"
+                        scan.running -> "تشخیص شهر · ${fa(scan.done)} از ${fa(scan.total)}"
+                        scan.error != null -> scan.error!!
+                        scan.hits.isEmpty() -> "ترکیه و آلمان، به ترتیب پینگ و ثبات"
+                        else -> "شبکه: " + scan.network.removePrefix("cell:").replace("wifi", "وای‌فای")
+                    },
+                    style = T.small.copy(fontSize = 11.sp), color = if (scan.error != null && !scan.running) K.ember else K.rose, maxLines = 1,
                 )
             }
-            Spacer(Modifier.width(12.dp))
-            Switch(
-                options.iran, { onOptions(options.copy(iran = it)) }, enabled = enabled,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = K.night, checkedTrackColor = K.ok,
-                    uncheckedThumbColor = K.rose, uncheckedTrackColor = K.wine, uncheckedBorderColor = K.wineLine,
-                ),
-            )
+            if (!scan.running) Text("اسکن", style = T.small, color = if (enabled) K.amber else K.rose)
         }
-        Spacer(Modifier.height(16.dp))
-        Text("راه رسیدن به کلادفلر", style = T.strong, color = K.champagne)
-        if (options.iran) {
-            Text("حالت ایران روشن است؛ ترتیب خودکار: MASQUE · HTTP/2 ← Amnezia ← Gool (آی‌پی ثابت هر کدام اگر گذاشته باشی، استفاده می‌شود).",
-                style = T.small, color = K.ok)
+        if (scan.running) {
+            Spacer(Modifier.height(6.dp))
+            val frac = if (scan.total > 0) scan.done.toFloat() / scan.total else 0f
+            val half = if (scan.phase == 1) frac / 2 else 0.5f + frac / 2
+            Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(K.wineLine)) {
+                Box(Modifier.fillMaxWidth(half.coerceIn(0f, 1f)).fillMaxHeight().background(K.amber))
+            }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            (if (options.autoFallback) "اگر این یکی جواب نداد، دو پروتکل دیگر خودکار امتحان می‌شود. "
-            else "فقط همین پروتکل امتحان می‌شود. ") +
-                "«آی‌پی سفید» بین آدرس‌های کلادفلر با دست‌دادن واقعی می‌گردد و یکی که از این شبکه جواب بدهد را ثابت می‌گذارد؛ با آی‌پی ثابت، هسته فقط به همان وصل می‌شود.",
-            style = T.small, color = K.rose,
-        )
-        Spacer(Modifier.height(12.dp))
-        Transport.entries.forEach { t ->
-            val on = t == options.transport
-            val pin = options.pins[t]
-            Column(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp))
-                    .border(1.dp, if (on) K.gold else K.wineLine, RoundedCornerShape(16.dp))
-                    .background(if (on) K.wine else Color.Transparent)
-                    .clickable(enabled = enabled) { onOptions(options.copy(transport = t)) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(t.title, style = T.strong, color = if (on) K.gold else K.champagne)
-                        Text(t.hint, style = T.small, color = K.rose)
-                    }
-                    Radio(on)
+        // results: Turkey | Germany
+        val tr = Colos.turkey(scan.hits)
+        val de = Colos.germanyFirst(scan.hits)
+        val rest = Colos.others(scan.hits)
+        if (scan.hits.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CountryColumn(Modifier.weight(1f), "TR", "ترکیه", tr, chosen, enabled && !scan.running) { GameEngine.pick(ctx, it) }
+                CountryColumn(Modifier.weight(1f), "DE", "آلمان", de, chosen, enabled && !scan.running) { GameEngine.pick(ctx, it) }
+            }
+            if (rest.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { more = !more }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("جاهای دیگر (${fa(rest.size)})", style = T.small, color = K.rose, modifier = Modifier.weight(1f))
+                    Icon(Ic.chevronDown, null, tint = K.rose, modifier = Modifier.size(18.dp))
                 }
-                if (PinScan.canScan(t)) {
-                    Spacer(Modifier.height(10.dp))
-                    val mine = scan.transport == t
-                    val busy = mine && scan.running
-                    // one capsule row: [ping badge] address ............ [حذف] [آی‌پی سفید]
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(K.night.copy(alpha = 0.6f))
-                            .border(1.dp, K.wineLine, RoundedCornerShape(22.dp)).padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        when {
-                            busy -> Text(
-                                "${fa(scan.done)}/${fa(scan.total)} · ${fa(scan.found)} جواب",
-                                style = T.small, color = K.gold, modifier = Modifier.weight(1f), maxLines = 1,
-                            )
-                            pin != null -> {
-                                options.pinPing[t]?.let { ms ->
-                                    Badge("$ms ms", pingColor(ms))
-                                    Spacer(Modifier.width(6.dp))
-                                }
-                                Text(pin, style = T.small.copy(textDirection = TextDirection.Ltr), color = K.champagne,
-                                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            else -> Text("خودکار", style = T.small, color = K.rose, modifier = Modifier.weight(1f), maxLines = 1)
-                        }
-                        if (pin != null && !busy) {
-                            SmallButton("حذف", K.rose, enabled) {
-                                onOptions(options.copy(pins = options.pins - t, pinPing = options.pinPing - t))
-                            }
-                            Spacer(Modifier.width(4.dp))
-                        }
-                        if (busy) {
-                            SmallButton("توقف", K.ember, true) { PinScan.cancel() }
-                        } else {
-                            SmallButton("آی‌پی سفید", K.gold, enabled && !scan.running) {
-                                PinScan.start(ctx, t) { ep, ms ->
-                                    onOptions(latest.copy(pins = latest.pins + (t to ep), pinPing = latest.pinPing + (t to ms)))
-                                }
-                            }
-                        }
-                    }
-                    if (mine && !scan.running && scan.result != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(scan.result!!, style = T.small, color = if (scan.found > 0) K.ok else K.ember)
-                    }
+                AnimatedVisibility(more) {
+                    Column { rest.forEach { HitRow(it, it.endpoint == chosen, enabled && !scan.running) { GameEngine.pick(ctx, it) } } }
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
+        // the engine
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(Transport.AMNEZIA to "پوشش کامل", Transport.WIREGUARD to "سبک‌ترین").forEach { (t, sub) ->
+                val on = t == options.gameTransport
+                Row(
+                    Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (on) K.wine else Color.Transparent)
+                        .border(1.dp, if (on) K.amber else K.wineLine, RoundedCornerShape(12.dp))
+                        .clickable(enabled = enabled) { onOptions(options.copy(gameTransport = t)) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(t.title, style = T.strong.copy(fontSize = 14.sp), color = if (on) K.amber else K.champagne)
+                        Text(sub, style = T.small.copy(fontSize = 11.sp), color = K.rose)
+                    }
+                    Radio(on, K.amber)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CountryColumn(
+    modifier: Modifier, cc: String, name: String, hits: List<WgScan.Hit>, chosen: String?, enabled: Boolean,
+    onPick: (WgScan.Hit) -> Unit,
+) {
+    Column(modifier) {
+        Text("${flag(cc)}  $name", style = T.small, color = K.champagne)
+        Spacer(Modifier.height(4.dp))
+        if (hits.isEmpty()) {
+            Text("پیدا نشد", style = T.small.copy(fontSize = 11.sp), color = K.rose)
+        }
+        hits.take(4).forEach { HitRow(it, it.endpoint == chosen, enabled) { onPick(it) } }
+    }
+}
+
+/** One result: city, then ping (coloured), jitter and loss; the chosen one has the accent border. */
+@Composable
+private fun HitRow(h: WgScan.Hit, chosen: Boolean, enabled: Boolean, onPick: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (chosen) K.wine else Color.Transparent)
+            .border(1.dp, if (chosen) K.amber else K.wineLine, RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onPick).padding(horizontal = 10.dp, vertical = 7.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(Colos.NAMES[h.colo] ?: h.colo.ifBlank { "نامعلوم" }, style = T.small, color = if (chosen) K.amber else K.champagne,
+                modifier = Modifier.weight(1f), maxLines = 1)
+            Text("${h.pingMs} ms", style = T.strong.copy(textDirection = TextDirection.Ltr, fontSize = 14.sp), color = pingColor(h.pingMs))
+        }
+        Text("لرزش ${fa(h.jitterMs)} · افت ${fa(h.lossPct)}٪", style = T.small.copy(fontSize = 10.sp),
+            color = if (h.gameReady) K.ok else K.rose)
     }
 }
 
 @Composable
 private fun Radio(on: Boolean, color: Color = K.gold) {
     Box(
-        Modifier.size(18.dp).clip(CircleShape)
+        Modifier.size(16.dp).clip(CircleShape)
             .border(2.dp, if (on) color else K.wineLine, CircleShape)
             .padding(4.dp).clip(CircleShape).background(if (on) color else Color.Transparent)
     )
-}
-
-@Composable
-private fun Badge(text: String, color: Color) {
-    Box(
-        Modifier.clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.16f))
-            .padding(horizontal = 8.dp, vertical = 2.dp)
-    ) { Text(text, style = T.small.copy(textDirection = TextDirection.Ltr), color = color, maxLines = 1) }
-}
-
-@Composable
-private fun SmallButton(text: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.clip(RoundedCornerShape(18.dp)).border(1.dp, if (enabled) color else K.wineLine, RoundedCornerShape(18.dp))
-            .clickable(enabled = enabled, onClick = onClick).heightIn(min = 36.dp).padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(text, style = T.small, color = if (enabled) color else K.rose, maxLines = 1) }
-}
-
-/**
- * «کاربر گیمر»: Amnezia or WireGuard straight on the phone (no layer in between), and the scan
- * that finds this network's best paths by ping, jitter and loss.
- */
-@Composable
-private fun GamerPanel(options: Options, enabled: Boolean, onOptions: (Options) -> Unit) {
-    val ctx = LocalContext.current
-    val scan by GameEngine.scan.collectAsState()
-    LaunchedEffect(Unit) { GameEngine.loadSaved(ctx) }
-    Column(Modifier.fillMaxWidth()) {
-        Text("حالت بازی", style = T.strong, color = K.champagne)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Amnezia یا WireGuard مستقیم روی گوشی، بدون هیچ لایه‌ی اضافه؛ بسته‌ی بازی کوتاه‌ترین راه را می‌رود.",
-            style = T.small, color = K.rose,
-        )
-        Spacer(Modifier.height(12.dp))
-        listOf(
-            Transport.AMNEZIA to "با پوشش Amnezia؛ وقتی WireGuard ساده بسته است",
-            Transport.WIREGUARD to "بی‌پوشش؛ سبک‌ترین، اگر باز باشد",
-        ).forEach { (t, hint) ->
-            val on = t == options.gameTransport
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp))
-                    .border(1.dp, if (on) K.amber else K.wineLine, RoundedCornerShape(16.dp))
-                    .background(if (on) K.wine else Color.Transparent)
-                    .clickable(enabled = enabled) { onOptions(options.copy(gameTransport = t)) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("${t.title} گیمینگ", style = T.strong, color = if (on) K.amber else K.champagne)
-                    Text(hint, style = T.small, color = K.rose)
-                }
-                Radio(on, K.amber)
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("بهترین مسیر برای بازی", style = T.strong, color = K.champagne)
-                Text(
-                    "شبکه: " + scan.network.removePrefix("cell:").replace("wifi", "وای‌فای").ifBlank { "—" },
-                    style = T.small, color = K.rose,
-                )
-            }
-            SmallButton(if (scan.running) "در حال اسکن…" else "اسکن", K.amber, enabled && !scan.running) {
-                GameEngine.startScan(ctx, options.gameTransport)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        if (scan.running) {
-            Text(
-                "${fa(scan.done)} از ${fa(scan.total)} · ${fa(scan.found)} دروازه جواب داد",
-                style = T.small, color = K.amber,
-            )
-        }
-        scan.error?.let { Text(it, style = T.small, color = K.ember) }
-        if (scan.hits.isEmpty() && !scan.running) {
-            Text(
-                "هنوز اسکن نشده. «اسکن» را بزن؛ آدرس‌ها و پورت‌های WireGuard کلادفلر با دست‌دادن واقعی امتحان می‌شوند و بهترین‌ها به ترتیب امتیاز (پینگ + لرزش×۳ + افت×۲۰) می‌آیند.",
-                style = T.small, color = K.rose,
-            )
-        }
-        scan.hits.forEachIndexed { i, h ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp))
-                    .background(if (i == 0) K.wine else Color.Transparent)
-                    .border(1.dp, if (i == 0) K.amber else K.wineLine, RoundedCornerShape(14.dp))
-                    .clickable(enabled = enabled && !scan.running) { GameEngine.pick(ctx, h) }
-                    .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(if (i == 0) "★" else fa(i + 1), style = T.strong, color = if (i == 0) K.amber else K.rose)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(h.endpoint, style = T.strong.copy(textDirection = TextDirection.Ltr, fontSize = 14.sp),
-                        color = K.champagne, maxLines = 1)
-                    Text(
-                        "لرزش ${fa(h.jitterMs)} · افت ${fa(h.lossPct)}٪" + if (h.gameReady) " · مناسب بازی" else "",
-                        style = T.small, color = if (h.gameReady) K.ok else K.rose,
-                    )
-                }
-                Badge("${h.pingMs} ms", pingColor(h.pingMs))
-            }
-        }
-        if (scan.hits.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            Text("★ اول امتحان می‌شود؛ اگر از تونل رد نشد، بعدی‌ها خودکار. روی هر کدام بزنی، ★ می‌شود.",
-                style = T.small, color = K.rose)
-        }
-    }
 }
 
 // ------------------------------------------------------------ settings
@@ -635,48 +673,31 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
     val info = remember(account, busy) { Engine.accountInfo(ctx) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("تنظیمات", style = T.title, color = K.champagne)
-        if (locked) {
-            Spacer(Modifier.height(4.dp))
-            Text("برای عوض کردن تنظیمات اول قطع کن.", style = T.small, color = K.gold)
-        }
+        if (locked) Text("برای تغییر، اول قطع کن", style = T.small, color = K.warn)
         Spacer(Modifier.height(16.dp))
-        Section("پیدا کردن دروازه", "هسته IPهای کلادفلر را روی چند پورت امتحان می‌کند و بهترین را نگه می‌دارد.") {
-            Choice(Scan.entries, options.scan, { it.title }, !locked) { onOptions(options.copy(scan = it)) }
-        }
-        Section("نوع آی‌پی", "اگر اینترنتت IPv6 ندارد، IPv4 بماند.") {
-            Choice(IpFamily.entries, options.ip, { it.title }, !locked) { onOptions(options.copy(ip = it)) }
-        }
-        Toggle("تکه‌تکه کردن دست‌دادن", "شروع اتصال را تکه‌تکه می‌فرستد تا فیلتر آن را نشناسد.", options.fragment, !locked) {
-            onOptions(options.copy(fragment = it))
-        }
-        Toggle("پروتکل جایگزین خودکار", "اگر پروتکل انتخابی (یا آی‌پی ثابتش) جواب نداد، بقیه را امتحان کن.", options.autoFallback, !locked) {
-            onOptions(options.copy(autoFallback = it))
-        }
-        Spacer(Modifier.height(12.dp))
-        // the account card
+        Section("پیدا کردن گره") { Choice(Scan.entries, options.scan, { it.title }, !locked) { onOptions(options.copy(scan = it)) } }
+        Section("نوع آی‌پی") { Choice(IpFamily.entries, options.ip, { it.title }, !locked) { onOptions(options.copy(ip = it)) } }
+        Section("DNS") { Choice(Dns.entries, options.dns, { it.title }, !locked) { onOptions(options.copy(dns = it)) } }
+        Toggle("تکه‌تکه کردن دست‌دادن", options.fragment, !locked) { onOptions(options.copy(fragment = it)) }
+        Toggle("پروتکل جایگزین خودکار", options.autoFallback, !locked) { onOptions(options.copy(autoFallback = it)) }
+        Spacer(Modifier.height(8.dp))
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                .background(Brush.verticalGradient(listOf(K.wine, K.glass)))
-                .border(1.dp, K.wineLine, RoundedCornerShape(20.dp)).padding(16.dp)
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(K.wine)
+                .border(1.dp, K.wineLine, RoundedCornerShape(16.dp)).padding(14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("اکانت WARP", style = T.strong, color = K.champagne, modifier = Modifier.weight(1f))
                 Badge(if (info.device.isNotBlank()) "فعال" else "ساخته نشده", if (info.device.isNotBlank()) K.ok else K.rose)
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             KeyLine("شناسه‌ی دستگاه", info.device.take(8).ifBlank { "—" } + if (info.device.length > 8) "…" else "")
             KeyLine("آی‌پی داخلی", info.ipv4.ifBlank { "—" })
-            KeyLine("کلید WireGuard / Amnezia", if (info.wireguard) "✓ آماده" else "هنوز نه")
-            KeyLine("گواهی MASQUE", if (info.masque) "✓ آماده" else "هنوز نه")
-            Spacer(Modifier.height(8.dp))
-            Text("اکانت رایگان و کلیدها فقط روی همین گوشی است. اکانت تازه یعنی آی‌پی داخلی و کلید تازه.",
-                style = T.small, color = K.rose)
+            KeyLine("کلید WireGuard / Amnezia", if (info.wireguard) "✓" else "—")
+            KeyLine("گواهی MASQUE", if (info.masque) "✓" else "—")
             Spacer(Modifier.height(10.dp))
-            SmallButton(if (busy) "در حال ساخت…" else "ساختن اکانت تازه", if (busy) K.rose else K.ember, !locked && !busy) {
-                confirm = true
-            }
+            SmallButton(if (busy) "در حال ساخت…" else "اکانت تازه", if (busy) K.rose else K.ember, !locked && !busy) { confirm = true }
             account?.let {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(it, style = T.small, color = if (it.startsWith("ساخته نشد")) K.ember else K.ok)
             }
         }
@@ -686,8 +707,8 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
             onDismissRequest = { confirm = false },
             containerColor = K.wine,
             title = { Text("اکانت تازه بسازم؟", style = T.strong, color = K.champagne) },
-            text = { Text("اکانت فعلی از این گوشی پاک می‌شود و همین الان یک اکانت تازه در کلادفلر ساخته می‌شود (برای پروتکلی که انتخاب کردی).", style = T.body, color = K.rose) },
-            confirmButton = { TextButton({ confirm = false; onForget() }) { Text("پاک کن", style = T.strong, color = K.ember) } },
+            text = { Text("اکانت فعلی از این گوشی پاک و همین الان یک اکانت تازه ساخته می‌شود.", style = T.body, color = K.rose) },
+            confirmButton = { TextButton({ confirm = false; onForget() }) { Text("بساز", style = T.strong, color = K.ember) } },
             dismissButton = { TextButton({ confirm = false }) { Text("نه", style = T.strong, color = K.champagne) } },
         )
     }
@@ -695,33 +716,32 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
 
 @Composable
 private fun KeyLine(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(label, style = T.small, color = K.rose, modifier = Modifier.weight(1f))
         Text(value, style = T.small.copy(textDirection = TextDirection.Ltr), color = K.champagne)
     }
 }
 
 @Composable
-private fun Section(title: String, hint: String, content: @Composable () -> Unit) {
-    Text(title, style = T.strong, color = K.champagne)
-    Text(hint, style = T.small, color = K.rose)
-    Spacer(Modifier.height(8.dp))
+private fun Section(title: String, content: @Composable () -> Unit) {
+    Text(title, style = T.small, color = K.rose)
+    Spacer(Modifier.height(6.dp))
     content()
-    Spacer(Modifier.height(20.dp))
+    Spacer(Modifier.height(16.dp))
 }
 
-/** A capsule of equal segments; the chosen one is gold. */
+/** A capsule of equal segments; the chosen one is filled. */
 @Composable
 private fun <E> Choice(items: List<E>, selected: E, name: (E) -> String, enabled: Boolean, onPick: (E) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(K.wine)
-            .border(1.dp, K.wineLine, RoundedCornerShape(24.dp)).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(K.wine)
+            .border(1.dp, K.wineLine, RoundedCornerShape(20.dp)).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         items.forEach { e ->
             val on = e == selected
             Box(
-                Modifier.weight(1f).heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp))
+                Modifier.weight(1f).heightIn(min = 36.dp).clip(RoundedCornerShape(17.dp))
                     .background(if (on) K.gold else Color.Transparent)
                     .clickable(enabled = enabled) { onPick(e) },
                 contentAlignment = Alignment.Center,
@@ -731,13 +751,9 @@ private fun <E> Choice(items: List<E>, selected: E, name: (E) -> String, enabled
 }
 
 @Composable
-private fun Toggle(title: String, hint: String, value: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = T.strong, color = K.champagne)
-            Text(hint, style = T.small, color = K.rose)
-        }
-        Spacer(Modifier.width(12.dp))
+private fun Toggle(title: String, value: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = T.body, color = K.champagne, modifier = Modifier.weight(1f))
         Switch(
             value, onChange, enabled = enabled,
             colors = SwitchDefaults.colors(
@@ -764,12 +780,11 @@ private fun LogScreen(options: Options) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("گزارش", style = T.title, color = K.champagne)
             Spacer(Modifier.weight(1f))
-            SmallButton("کپی گزارش", K.gold, lines.isNotEmpty()) { copy(ctx, lines.joinToString("\n")) }
+            SmallButton("کپی", K.gold, lines.isNotEmpty()) { copy(ctx, lines.joinToString("\n")) }
             Spacer(Modifier.width(6.dp))
             SmallButton("پاک کردن", K.rose, lines.isNotEmpty()) { Engine.clearLog() }
         }
         Spacer(Modifier.height(10.dp))
-        // summary chips
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Badge("Aether " + (Engine.coreVersion?.let { "v$it" } ?: "—"), K.gold)
             Badge((if (s.gamer || options.gamer) "گیمر · " else "") + (s.transport ?: if (options.gamer) options.gameTransport else options.transport).title, K.champagne)
@@ -778,12 +793,12 @@ private fun LogScreen(options: Options) {
         Spacer(Modifier.height(10.dp))
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             LazyColumn(
-                Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Color(0xFF0E0408))
-                    .border(1.dp, K.wineLine, RoundedCornerShape(16.dp)).padding(12.dp),
+                Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)).background(Color(0xFF00030A))
+                    .border(1.dp, K.wineLine, RoundedCornerShape(14.dp)).padding(12.dp),
                 state = list,
             ) {
                 if (lines.isEmpty()) item {
-                    Text("هنوز چیزی نیست. وصل شو تا مراحل این‌جا بیاید.", style = T.body, color = K.rose)
+                    Text("هنوز خالی است. وصل شو تا مراحل این‌جا بیاید.", style = T.body, color = K.rose)
                 }
                 items(lines) { l ->
                     Text(highlight(l), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 16.sp)
@@ -795,10 +810,10 @@ private fun LogScreen(options: Options) {
 
 private val TIME = Regex("""^·?\s*\d\d:\d\d:\d\d""")
 private val ADDR = Regex("""\[?[0-9a-fA-F]*[.:][0-9a-fA-F.:]+]?:\d{2,5}|\b\d{1,3}(?:\.\d{1,3}){3}\b""")
-private val GOOD = Regex("""\[\+]|validated|verified|still works|ready|passed""", RegexOption.IGNORE_CASE)
-private val BAD = Regex("""\[-]|error|failed|refused|timed out|no usable|did not""", RegexOption.IGNORE_CASE)
+private val GOOD = Regex("""\[\+]|validated|verified|still works|ready|passed|✓""", RegexOption.IGNORE_CASE)
+private val BAD = Regex("""\[-]|error|failed|refused|timed out|no usable|did not|not usable""", RegexOption.IGNORE_CASE)
 
-/** Terminal colours: time grey, addresses gold, success green, errors red, the rest champagne. */
+/** Terminal colours: time grey, addresses accent, success green, errors red, the rest light. */
 fun highlight(line: String): AnnotatedString = buildAnnotatedString {
     val base = when {
         BAD.containsMatchIn(line) -> K.ember

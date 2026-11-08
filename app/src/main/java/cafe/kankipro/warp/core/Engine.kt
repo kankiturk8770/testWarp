@@ -22,10 +22,10 @@ import java.net.Socket
  * the core; the gateway is proven by the core's own log line naming the edge it uses.
  */
 enum class Stage(val title: String) {
-    CORE("هسته"),
-    TUNNEL("تونل گوشی"),
-    GATEWAY("دروازهٔ کلادفلر"),
-    INTERNET("اینترنت"),
+    CORE("موتور"),
+    TUNNEL("تونل امن"),
+    GATEWAY("گره لبه"),
+    INTERNET("شبکه‌ی آزاد"),
 }
 
 enum class Phase { IDLE, CONNECTING, RUNNING, STOPPING, ERROR }

@@ -28,8 +28,10 @@ import cafe.kankipro.warp.ui.K
 import cafe.kankipro.warp.ui.KankiTheme
 
 class MainActivity : ComponentActivity() {
+    /** What to do once Android grants the VPN: connect, or run the gamer scan (it connects for a moment). */
+    private var afterVpn: () -> Unit = { start() }
     private val askVpn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (VpnService.prepare(this) == null) start()
+        if (VpnService.prepare(this) == null) afterVpn()
     }
     private val askNotify = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
                         options = options,
                         onOptions = { options = it; Prefs.save(this@MainActivity, it) },
                         onToggle = { toggle() },
+                        onGameScan = { withVpn { GameEngine.startScan(applicationContext, Prefs.options(this@MainActivity).gameTransport) } },
                         onForget = {
                             lifecycleScope.launch { Engine.remakeAccount(applicationContext, options.transport) }
                         },
@@ -60,10 +63,14 @@ class MainActivity : ComponentActivity() {
             Phase.RUNNING, Phase.CONNECTING -> if (s.gamer) GameEngine.disconnect(this) else WarpService.stop(this)
             Phase.STOPPING -> Unit
             else -> {
-                val ask = VpnService.prepare(this)
-                if (ask != null) askVpn.launch(ask) else start()
+                withVpn { start() }
             }
         }
+    }
+
+    private fun withVpn(then: () -> Unit) {
+        val ask = VpnService.prepare(this)
+        if (ask != null) { afterVpn = then; askVpn.launch(ask) } else then()
     }
 
     /** The mode picked on the home screen decides the engine: the core (normal) or straight WireGuard (gamer). */

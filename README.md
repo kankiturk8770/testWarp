@@ -34,7 +34,8 @@
 | پل C (بارگذاری کتابخانه‌ها، گزارش هسته) | `app/src/main/cpp/bridge.c` |
 | حالت گیمر: Amnezia/WireGuard مستقیم روی TUN | `core/GameEngine.kt`، `core/WarpWg.kt` |
 | اسکن دروازه‌ها (گیمر و آی‌پی سفید) | `core/WgScan.kt` (با `WgHello.kt`، `Crypto.kt`)، `core/H2Scan.kt`، `core/PinScan.kt` |
-| ظاهر | `ui/Theme.kt`، `ui/Portal.kt` (دکمه‌ی حلقه‌ای)، `ui/Screens.kt` |
+| شهر دیتاسنترها (آلمان، ترکیه) | `core/Colos.kt` |
+| ظاهر | `ui/Theme.kt`، `ui/Icons.kt`، `ui/Portal.kt` (دکمه‌ی اتصال)، `ui/Screens.kt` |
 | ساخت (هسته، hev، APK، تلگرام) | `.github/workflows/build.yml` |
 
 ## ساخت

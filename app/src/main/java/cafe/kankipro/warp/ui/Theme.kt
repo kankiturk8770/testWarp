@@ -12,19 +12,24 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.sp
 import cafe.kankipro.warp.R
 
-/** Kanki's wine and gold, at night. */
+/**
+ * AMOLED black with a blue cast: the screen is off where nothing is drawn, and one electric blue
+ * carries every action. The gamer mode swaps the accent for a cyan, so the mode shows at a glance.
+ * (The old names stay so every screen keeps compiling: gold is the accent, wine the surface.)
+ */
 object K {
-    val night = Color(0xFF16060D)    // background: deep wine, not grey-black
-    val wine = Color(0xFF2B0C19)     // raised surfaces
-    val wineLine = Color(0xFF45172A) // hairlines and idle rings
-    val gold = Color(0xFFE9B949)     // proven / action
-    val champagne = Color(0xFFF6E3B4) // primary text
-    val rose = Color(0xFFB58A97)     // secondary text
-    val ember = Color(0xFFFF5A5F)    // failure
-    val ok = Color(0xFF7ED6A0)       // healthy: good ping, success lines in the log
-    val amber = Color(0xFFF2A23A)    // the gamer mode's warmer accent, middling ping
-    val ash = Color(0xFF8C7A80)      // timestamps and quiet labels in the log
-    val glass = Color(0x332B0C19)    // the info cards' fill over the night background
+    val night = Color(0xFF000510)     // background: AMOLED black, blue cast
+    val wine = Color(0xFF08111F)      // raised surfaces
+    val wineLine = Color(0xFF15243A)  // hairlines, idle ring segments
+    val gold = Color(0xFF4D9FFF)      // the accent: actions, proven stages
+    val champagne = Color(0xFFE6EEFF) // primary text
+    val rose = Color(0xFF7F90AE)      // secondary text
+    val ember = Color(0xFFF87171)     // failure
+    val ok = Color(0xFF34D399)        // healthy: good ping, success lines
+    val warn = Color(0xFFFBBF24)      // middling ping
+    val amber = Color(0xFF2EE6D6)     // the gamer mode's accent (cyan)
+    val ash = Color(0xFF5B6B86)       // timestamps in the log
+    val glass = Color(0x6608111F)     // tile fill over the background
 }
 
 val Vazir = FontFamily(

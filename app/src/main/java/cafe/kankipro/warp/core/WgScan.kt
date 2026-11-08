@@ -29,7 +29,16 @@ import kotlin.random.Random
  * where it came out.
  */
 object WgScan {
-    data class Hit(val endpoint: String, val pingMs: Int, val jitterMs: Int, val lossPct: Int) {
+    data class Hit(
+        val endpoint: String,
+        val pingMs: Int,
+        val jitterMs: Int,
+        val lossPct: Int,
+        /** The Cloudflare data centre a short real connection came out of (FRA, IST, …); blank until checked. */
+        val colo: String = "",
+    ) {
+        val country: String get() = Colos.country(colo)
+
         /** Kanki's gaming score: lower is better. */
         val score: Int get() = pingMs + jitterMs * 3 + lossPct * 20
 

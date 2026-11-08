@@ -174,8 +174,8 @@ class WarpService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addAddress("fdfe:dcba:9876::1", 126)
             .addRoute("::", 0)
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("1.0.0.1")
+
+        o.dns.servers.forEach { b.addDnsServer(it) }
         // The core's own sockets go to Cloudflare directly, never back into the TUN.
         runCatching { b.addDisallowedApplication(packageName) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) b.setMetered(false)

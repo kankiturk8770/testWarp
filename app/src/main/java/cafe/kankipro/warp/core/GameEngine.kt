@@ -86,6 +86,8 @@ object GameEngine {
         val hits: List<WgScan.Hit> = emptyList(),
         val network: String = "",
         val error: String? = null,
+        /** 1: finding gateways that answer; 2: a short real connection to each, to learn its city. */
+        val phase: Int = 1,
     )
 
     /** The gamer scan for [transport] (Amnezia scans with its disguise): best paths of this network. */
@@ -100,17 +102,54 @@ object GameEngine {
                 _scan.value = _scan.value.copy(running = false, error = err ?: "اکانت WireGuard پیدا نشد")
                 return@launch
             }
-            val hits = runCatching {
-                WgScan.scan(id, transport == Transport.AMNEZIA, wide = 400, keep = 10, samples = 10) { d, t, f ->
-                    _scan.value = _scan.value.copy(done = d, total = t, found = f)
+            val disguise = transport == Transport.AMNEZIA
+            // Phase 1: a wide sweep (about 1500 of WARP's ~96,000 address:port pairs), real handshakes.
+            val found = runCatching {
+                WgScan.scan(id, disguise, wide = 1500, keep = 14, samples = 8) { d, t, f ->
+                    _scan.value = _scan.value.copy(done = d, total = t, found = f, phase = 1)
                 }
             }.getOrElse { emptyList() }
-            if (hits.isNotEmpty()) Prefs.saveGameHits(ctx, net, hits.take(6))
+            // Phase 2: the city of each, by connecting for a moment and asking Cloudflare where we came out.
+            val located = if (found.isEmpty()) emptyList() else locate(ctx, id, disguise, found)
+            val hits = (located.ifEmpty { found }).sortedWith(compareBy({ it.country !in setOf("DE", "TR") }, { it.score }))
+            if (hits.isNotEmpty()) Prefs.saveGameHits(ctx, net, hits)
             _scan.value = _scan.value.copy(
-                running = false, hits = if (hits.isNotEmpty()) hits.take(6) else _scan.value.hits,
+                running = false, hits = if (hits.isNotEmpty()) hits else _scan.value.hits,
                 error = if (hits.isEmpty()) "هیچ دروازه‌ای از این شبکه جواب نداد" else null,
             )
         }
+    }
+
+    /**
+     * Brings the engine up on each gateway for a few seconds, asks Cloudflare's trace which data centre
+     * answered, and measures the ping a game would see (DNS round trip through the tunnel). Anycast
+     * means only a real connection can tell; the handshake alone cannot.
+     */
+    private suspend fun locate(ctx: Context, id: WarpWg, disguise: Boolean, hits: List<WgScan.Hit>): List<WgScan.Hit> {
+        val out = ArrayList<WgScan.Hit>()
+        for ((n, h) in hits.withIndex()) {
+            _scan.value = _scan.value.copy(phase = 2, done = n, total = hits.size, found = out.size)
+            try {
+                up(ctx, id.config(h.endpoint, disguise))
+                var e: Probe.Egress? = null
+                val until = SystemClock.elapsedRealtime() + 6000
+                while (e == null && SystemClock.elapsedRealtime() < until) {
+                    e = Probe.direct(2000)
+                    if (e == null) delay(200)
+                }
+                if (e != null) {
+                    val ping = Probe.dnsPing(3, 1200)?.toInt() ?: h.pingMs
+                    out += h.copy(colo = e.colo.uppercase(), pingMs = ping)
+                    Engine.note("scan: ${h.endpoint} → ${e.colo} ${ping}ms")
+                }
+            } catch (e: Exception) {
+                Engine.note("scan: ${h.endpoint} not usable (${reason(e)})")
+            } finally {
+                runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
+            }
+        }
+        _scan.value = _scan.value.copy(done = hits.size, found = out.size)
+        return out
     }
 
     /** Makes [hit] this network's first choice (the one connect uses). */
@@ -173,7 +212,7 @@ object GameEngine {
                 for ((n, ep) in tries.withIndex()) {
                     Engine.update { it.copy(gateway = ep, proven = 1, attempt = n + 1, attempts = tries.size,
                         message = if (n == 0) "روشن کردن موتور بازی…" else "دروازه‌ی قبلی رد شد؛ امتحان $ep…") }
-                    up(ctx, id.config(ep, transport == Transport.AMNEZIA))
+                    up(ctx, id.config(ep, transport == Transport.AMNEZIA, dns = Prefs.options(ctx).dns.servers))
                     Engine.update { it.copy(proven = 2, message = "دست دادن با کلادفلر…") }
                     // Gateway proven = data came back from it; internet proven = a real request answered.
                     val deadline = SystemClock.elapsedRealtime() + 9_000

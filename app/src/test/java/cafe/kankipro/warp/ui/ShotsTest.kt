@@ -69,7 +69,8 @@ class ShotsTest {
     @Test fun gamerRunning() = shot(
         "3b-gamer-running",
         ConnState(phase = Phase.RUNNING, proven = 4, transport = Transport.AMNEZIA, gamer = true,
-            egress = Probe.Egress("104.28.212.71", "IST", "TR", "on", 46), gateway = "188.114.97.3:4500", startedAt = 0),
+            egress = Probe.Egress("104.28.212.71", "FRA", "TR", "on", 74), gateway = "188.114.97.3:4500", startedAt = 0,
+            actual = "Amnezia · پوشش کامل"),
         options = Options(gamer = true),
     )
 
@@ -89,9 +90,11 @@ class ShotsTest {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val net = cafe.kankipro.warp.core.GameEngine.networkKey(ctx)
         cafe.kankipro.warp.core.Prefs.saveGameHits(ctx, net, listOf(
-            cafe.kankipro.warp.core.WgScan.Hit("188.114.97.3:4500", 48, 3, 0),
-            cafe.kankipro.warp.core.WgScan.Hit("162.159.192.7:2408", 61, 6, 0),
-            cafe.kankipro.warp.core.WgScan.Hit("162.159.195.40:1701", 95, 22, 10),
+            cafe.kankipro.warp.core.WgScan.Hit("188.114.97.3:4500", 74, 3, 0, "FRA"),
+            cafe.kankipro.warp.core.WgScan.Hit("162.159.192.7:2408", 61, 6, 0, "IST"),
+            cafe.kankipro.warp.core.WgScan.Hit("162.159.195.40:1701", 95, 9, 0, "DUS"),
+            cafe.kankipro.warp.core.WgScan.Hit("188.114.96.9:1002", 88, 12, 0, "IST"),
+            cafe.kankipro.warp.core.WgScan.Hit("188.114.99.4:8854", 140, 22, 10, "MXP"),
         ))
         shot("7-gamer", ConnState(), options = Options(gamer = true))
     }
