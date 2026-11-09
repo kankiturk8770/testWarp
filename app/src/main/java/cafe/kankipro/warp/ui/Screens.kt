@@ -40,6 +40,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -85,7 +87,6 @@ import cafe.kankipro.warp.core.IpFamily
 import cafe.kankipro.warp.core.IpTest
 import cafe.kankipro.warp.core.Options
 import cafe.kankipro.warp.core.Phase
-import cafe.kankipro.warp.core.PinScan
 import cafe.kankipro.warp.core.Scan
 import cafe.kankipro.warp.core.Stage
 import cafe.kankipro.warp.core.Transport
@@ -102,7 +103,7 @@ fun App(
     onForget: () -> Unit,
     initialTab: Tab = Tab.HOME,
     onGameScan: (Boolean) -> Unit = {},
-    onIpScan: (IpTest.Kind) -> Unit = {},
+    onIpScan: (List<IpTest.Kind>) -> Unit = {},
     onGameConnect: (WgScan.Hit) -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(initialTab) }
@@ -437,27 +438,28 @@ private fun short(t: Transport) = when (t) {
     Transport.PSIPHON -> "شرایط خیلی سخت"
 }
 
-/** The normal user's protocols, two to a row; the white-IP scan is the small radar on each. */
+/**
+ * The normal user's protocols, two to a row. The pencil sets a fixed IP by hand (pasted from the IP
+ * test screen or anywhere); without one the core finds a gateway itself. No scan starts from here:
+ * the scans live on the «تست آی‌پی» screen.
+ */
 @Composable
 private fun ProtocolGrid(options: Options, enabled: Boolean, onOptions: (Options) -> Unit) {
-    val ctx = LocalContext.current
-    val latest by rememberUpdatedState(options)
-    val scan by PinScan.state.collectAsState()
     val iranLocked = options.iran
+    var editing by remember { mutableStateOf<Transport?>(null) }
     Column(Modifier.fillMaxWidth()) {
         Transport.entries.chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 pair.forEach { t ->
                     val on = t == options.transport && !iranLocked
                     val inIran = iranLocked && t in Options.IRAN
-                    val busy = scan.transport == t && scan.running
                     val pin = options.pins[t]
                     Column(
                         Modifier.weight(1f).heightIn(min = 72.dp).clip(RoundedCornerShape(14.dp))
                             .background(if (on || inIran) K.wine else Color.Transparent)
                             .border(1.dp, when { on -> K.gold; inIran -> K.ok.copy(alpha = 0.6f); else -> K.wineLine }, RoundedCornerShape(14.dp))
                             .clickable(enabled = enabled && !iranLocked) { onOptions(options.copy(transport = t)) }
-                            .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                            .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -465,27 +467,19 @@ private fun ProtocolGrid(options: Options, enabled: Boolean, onOptions: (Options
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(short(t), style = T.small.copy(fontSize = 11.sp), color = K.rose, maxLines = 1)
                             }
-                            if (PinScan.canScan(t)) {
-                                RadarButton(busy, enabled && !scan.running || busy, if (on) K.gold else K.rose) {
-                                    if (busy) PinScan.cancel()
-                                    else PinScan.start(ctx, t) { ep, ms ->
-                                        onOptions(latest.copy(pins = latest.pins + (t to ep), pinPing = latest.pinPing + (t to ms)))
-                                    }
-                                }
+                            if (t in Options.PINNABLE) {
+                                Box(
+                                    Modifier.size(40.dp).clip(CircleShape).clickable(enabled = enabled) { editing = t },
+                                    contentAlignment = Alignment.Center,
+                                ) { Icon(Ic.edit, "آی‌پی ثابت", tint = if (pin != null) K.gold else K.rose, modifier = Modifier.size(18.dp)) }
                             }
                         }
-                        when {
-                            busy -> Text(
-                                "${percent(scan.done, scan.total)} · ${fa(scan.found)} جواب",
-                                style = T.small.copy(fontSize = 11.sp), color = K.gold, maxLines = 1,
-                            )
-                            pin != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                                options.pinPing[t]?.let { Badge("$it ms", pingColor(it)) }
-                                Spacer(Modifier.width(4.dp))
-                                Text("آی‌پی ثابت", style = T.small.copy(fontSize = 11.sp), color = K.champagne, modifier = Modifier.weight(1f), maxLines = 1)
-                                Icon(Ic.close, "حذف", tint = K.rose, modifier = Modifier.size(18.dp).clip(CircleShape).clickable(enabled = enabled) {
-                                    onOptions(options.copy(pins = options.pins - t, pinPing = options.pinPing - t))
-                                })
+                        if (pin != null) {
+                            Spacer(Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                options.pinPing[t]?.let { Badge("$it ms", pingColor(it)); Spacer(Modifier.width(4.dp)) }
+                                Text(pin, style = T.small.copy(fontSize = 11.sp, textDirection = TextDirection.Ltr), color = K.champagne,
+                                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -493,28 +487,59 @@ private fun ProtocolGrid(options: Options, enabled: Boolean, onOptions: (Options
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
-        val last = scan.result
-        if (!scan.running && last != null) {
-            Spacer(Modifier.height(4.dp))
-            Text(last, style = T.small.copy(fontSize = 11.sp), color = if (scan.found > 0) K.ok else K.ember)
+    }
+    editing?.let { t ->
+        PinDialog(t, options.pins[t], onClose = { editing = null }) { ep ->
+            onOptions(if (ep == null) options.copy(pins = options.pins - t, pinPing = options.pinPing - t)
+                else options.copy(pins = options.pins + (t to ep), pinPing = options.pinPing - t))
+            editing = null
         }
     }
 }
 
 internal fun percent(done: Int, total: Int) = if (total <= 0) "۰٪" else fa((done * 100 / total).coerceIn(0, 100)) + "٪"
 
-/** The scan key: a radar that turns when a scan runs (tap again to stop). */
+/** «ip:port», IPv4 or [IPv6]. */
+private val ENDPOINT = Regex("""^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]+])\:\d{1,5}$""")
+
+/** Type or paste a fixed IP for [t]; «خودکار» removes it and the core finds one itself. */
 @Composable
-private fun RadarButton(busy: Boolean, enabled: Boolean, tint: Color, onClick: () -> Unit) {
-    val spin by rememberInfiniteTransition(label = "radar")
-        .animateFloat(0.35f, 1f, infiniteRepeatable(tween(500), RepeatMode.Reverse), label = "r")
-    Box(
-        Modifier.size(36.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(Ic.radar, "آی‌پی سفید", tint = if (busy) K.gold.copy(alpha = spin) else if (enabled) tint else K.wineLine,
-            modifier = Modifier.size(20.dp))
-    }
+internal fun PinDialog(t: Transport, current: String?, onClose: () -> Unit, onSave: (String?) -> Unit) {
+    var text by remember { mutableStateOf(current.orEmpty()) }
+    val clean = text.trim()
+    val valid = ENDPOINT.matches(clean) && clean.substringAfterLast(':').toInt() in 1..65535
+    AlertDialog(
+        onDismissRequest = onClose,
+        containerColor = K.wine,
+        title = { Text("آی‌پی ثابت · ${t.title}", style = T.strong, color = K.champagne) },
+        text = {
+            Column {
+                Text("آی‌پی:پورت را بنویس یا از «تست آی‌پی» کپی کن. خالی = خودکار (برنامه خودش پیدا می‌کند).",
+                    style = T.small, color = K.rose)
+                Spacer(Modifier.height(10.dp))
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    OutlinedTextField(
+                        text, { text = it }, singleLine = true,
+                        placeholder = { Text("162.159.198.2:443", color = K.rose.copy(alpha = 0.6f)) },
+                        textStyle = T.strong.copy(textDirection = TextDirection.Ltr, color = K.champagne),
+                        isError = clean.isNotEmpty() && !valid,
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = K.gold, unfocusedBorderColor = K.wineLine, cursorColor = K.gold),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (clean.isNotEmpty() && !valid) Text("شکلش درست نیست؛ مثل 162.159.198.2:443", style = T.small, color = K.ember)
+            }
+        },
+        confirmButton = {
+            TextButton({ onSave(clean) }, enabled = valid) { Text("ذخیره", style = T.strong, color = if (valid) K.gold else K.rose) }
+        },
+        dismissButton = {
+            Row {
+                if (current != null) TextButton({ onSave(null) }) { Text("خودکار", style = T.strong, color = K.ember) }
+                TextButton(onClose) { Text("بستن", style = T.strong, color = K.champagne) }
+            }
+        },
+    )
 }
 
 @Composable

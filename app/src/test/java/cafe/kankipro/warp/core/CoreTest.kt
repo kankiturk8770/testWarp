@@ -211,12 +211,36 @@ class CoreTest {
             IpTest.Found(ep, IpTest.Kind.GAMING, proto, tcp = !proto, pingMs = ping, lossPct = loss, colo = colo)
         val list = listOf(
             f("a:1", 90, 0, "FRA"), f("b:1", 60, 16, "IST"), f("c:1", 70, 0, "IST"), f("d:1", 190, 0, "DXB"),
-            f("e:1", 250, 0, "FRA"), f("g:1", 0, 0, "", proto = false), f("h:1", 80, 100, ""),
+            f("e:1", 450, 0, "FRA"), f("g:1", 0, 0, "", proto = false), f("h:1", 80, 100, ""), f("i:1", 120, -1, "MXP"),
         )
+        // golden: measured, little loss, up to 200 ms
         assertEquals(listOf("c:1", "a:1", "d:1"), IpTest.golden(list).map { it.endpoint })
+        // working: every one that answers, any ping, lowest first (450 ms too); not the dead or the TCP-only
+        assertEquals(listOf("b:1", "c:1", "a:1", "i:1", "d:1", "e:1"), IpTest.working(list).map { it.endpoint })
         val c = IpTest.byCountry(list)
-        assertEquals(listOf("TR", "DE", "AE"), c.map { it.first })
-        assertEquals(listOf("c:1", "b:1"), c[0].second.map { it.endpoint })
+        assertEquals(listOf("TR", "DE", "IT", "AE"), c.map { it.first })
+        assertEquals(listOf("a:1", "e:1"), c[1].second.map { it.endpoint })
+    }
+
+    @Test fun eachScanKindPinsOnlyTheProtocolsThatCanUseIt() {
+        assertEquals(listOf(Transport.MASQUE_H3, Transport.GOOL, Transport.MIM), IpTest.Kind.H3.transports)
+        assertEquals(listOf(Transport.MASQUE_H2), IpTest.Kind.H2.transports)
+        val gool = Options(transport = Transport.GOOL, pins = mapOf(Transport.GOOL to "162.159.198.1:443")).toArgs("/x")
+        assertEquals("162.159.198.1:443", gool[gool.indexOf("--peer") + 1])
+        assertTrue("--wg-peer" !in gool)
+        val mim = Options(transport = Transport.MIM, pins = mapOf(Transport.MIM to "162.159.198.1:443")).toArgs("/x")
+        assertEquals("162.159.198.1:443", mim[mim.indexOf("--mim-outer") + 1])
+        assertEquals(IpTest.Kind.H2, IpTest.parse("NORMAL,1.2.3.4:443,1,1,90,0,0,,wifi,5")!!.kind)
+    }
+
+    @Test fun quicProbeIsAnswerableWithoutCrypto() {
+        val p = H3Scan.probe(kotlin.random.Random(3))
+        assertEquals(1200, p.packet.size)
+        assertEquals(0xC0, p.packet[0].toInt() and 0xC0)
+        // a Version Negotiation answer: long header, version 0, dcid = our scid
+        val vn = byteArrayOf(0x80.toByte(), 0, 0, 0, 0, 8) + p.scid + byteArrayOf(8) + ByteArray(8) + byteArrayOf(0, 0, 0, 1)
+        assertTrue(H3Scan.echoedId(vn)!!.contentEquals(p.scid))
+        assertNull(H3Scan.echoedId(p.packet))
     }
 
     @Test fun ipTestArchiveKeepsTheNewestOfEachAddress() {

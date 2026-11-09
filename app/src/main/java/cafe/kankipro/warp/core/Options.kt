@@ -85,7 +85,10 @@ data class Options(
         pins[transport]?.let { pin ->
             when (transport) {
                 Transport.AMNEZIA, Transport.WIREGUARD -> { add("--wg-peer"); add(pin) }
-                Transport.MASQUE_H2, Transport.MASQUE_H3 -> { add("--peer"); add(pin) }
+                // Gool: the MASQUE hop it rides (the core's --peer, not --wg-peer, which would pick the classic gool)
+                Transport.MASQUE_H2, Transport.MASQUE_H3, Transport.GOOL -> { add("--peer"); add(pin) }
+                // MASQUE-in-MASQUE: the outer hop, the one this network sees; the inner one the core picks
+                Transport.MIM -> { add("--mim-outer"); add(pin) }
                 else -> Unit
             }
         }
@@ -139,7 +142,7 @@ data class Options(
             }
         }
 
-        val PINNABLE = setOf(Transport.AMNEZIA, Transport.WIREGUARD, Transport.MASQUE_H2, Transport.MASQUE_H3)
+        val PINNABLE = setOf(Transport.AMNEZIA, Transport.WIREGUARD, Transport.MASQUE_H2, Transport.MASQUE_H3, Transport.GOOL, Transport.MIM)
 
         /** Order tried after the user's choice: what survives a hostile network first. */
         val RANKING = listOf(

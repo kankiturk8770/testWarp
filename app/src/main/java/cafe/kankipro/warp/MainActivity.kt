@@ -59,11 +59,11 @@ class MainActivity : ComponentActivity() {
                         onToggle = { toggle() },
                         initialTab = if (fromLink) Tab.SETTINGS else Tab.HOME,
                         onGameScan = { fast -> withVpn { GameEngine.startScan(applicationContext, Prefs.options(this@MainActivity).gameTransport, fast) } },
-                        // gaming learns cities with a short connection: the VPN must be allowed first
-                        onIpScan = { kind ->
+                        // the WireGuard scans learn cities with a short connection: the VPN must be allowed first
+                        onIpScan = { kinds ->
                             val disguise = Prefs.options(this@MainActivity).gameTransport == Transport.AMNEZIA
-                            if (kind == IpTest.Kind.GAMING) withVpn { IpTest.start(applicationContext, kind, disguise) }
-                            else IpTest.start(applicationContext, kind, disguise)
+                            if (kinds.any { it.wireguard }) withVpn { IpTest.start(applicationContext, kinds, disguise) }
+                            else IpTest.start(applicationContext, kinds, disguise)
                         },
                         // a gateway picked on the IP test screen: gamer mode, that gateway first, connect
                         onGameConnect = { hit ->
