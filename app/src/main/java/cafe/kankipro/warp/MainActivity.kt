@@ -65,6 +65,12 @@ class MainActivity : ComponentActivity() {
                             if (kinds.any { it.wireguard }) withVpn { IpTest.start(applicationContext, kinds, disguise) }
                             else IpTest.start(applicationContext, kinds, disguise)
                         },
+                        // addresses pasted from a channel: tested like a scan, kept under that scan only
+                        onIpImport = { kind, list ->
+                            val disguise = Prefs.options(this@MainActivity).gameTransport == Transport.AMNEZIA
+                            if (kind.wireguard) withVpn { IpTest.start(applicationContext, listOf(kind), disguise, list) }
+                            else IpTest.start(applicationContext, listOf(kind), disguise, list)
+                        },
                         // a gateway picked on the IP test screen: gamer mode, that gateway first, connect
                         onGameConnect = { hit ->
                             if (!options.gamer) { options = options.copy(gamer = true); Prefs.save(this@MainActivity, options) }

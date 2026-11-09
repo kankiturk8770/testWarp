@@ -39,6 +39,30 @@ enum class Dns(val title: String, val servers: List<String>) {
     ADGUARD("AdGuard · بدون تبلیغ", listOf("94.140.14.14", "94.140.15.15")),
 }
 
+/** How the TLS ClientHello is cut (the core's --fragment-size / --fragment-delay, both «n» or «a-b»). */
+enum class Frag(val title: String, val size: String, val delay: String) {
+    STANDARD("استاندارد", "8-16", "2-10"),
+    TINY("ریز", "1-5", "5-15"),
+    IRAN("ایران", "40", "10"),
+    LARGE("درشت", "50-100", "1-5"),
+}
+
+/** The core's junk-packet profile (--noize); AUTO leaves the core's own default per transport. */
+enum class Noize(val title: String, val value: String?) {
+    AUTO("خودکار", null), OFF("خاموش", "off"), LIGHT("سبک", "light"), FIREWALL("فایروال", "firewall"), GFW("قوی", "gfw"),
+}
+
+/** The name the MASQUE handshakes show in their ClientHello (--masque-sni). */
+enum class Sni(val title: String, val value: String?) {
+    CLOUDFLARE("www.cloudflare.com", null),
+    WARP("مثل اپ WARP", "consumer-masque.cloudflareclient.com"),
+}
+
+/** How many Amnezia junk packets the gamer engine sends before each handshake, and their size. */
+enum class GameJunk(val title: String, val jc: Int, val jmin: Int, val jmax: Int) {
+    LIGHT("سبک", 2, 20, 40), NORMAL("معمول", 4, 40, 70), HEAVY("سنگین", 8, 64, 128),
+}
+
 enum class IpFamily(val title: String, val value: String) {
     V4("IPv4", "v4"), V6("IPv6", "v6"), BOTH("هر دو", "both");
 }
@@ -67,17 +91,41 @@ data class Options(
     /** Psiphon's exit country (two letters), "" = Psiphon picks. */
     val psiphonRegion: String = "",
     val gameTransport: Transport = Transport.AMNEZIA,
+    // ---- against heavy filtering (normal user, the core)
+    val frag: Frag = Frag.STANDARD,
+    val noize: Noize = Noize.AUTO,
+    val sni: Sni = Sni.CLOUDFLARE,
+    /** Encrypted Client Hello: the server name goes hidden (--ech auto). */
+    val ech: Boolean = false,
+    /** The QUIC v2 opener for HTTP/3 (on in the core by default). */
+    val quicV2: Boolean = true,
+    // ---- gamer engine
+    val gameJunk: GameJunk = GameJunk.NORMAL,
+    val gameMtu: Int = 1280,
 ) {
     /** The core's arguments: one SOCKS5 listener on the loopback, identity kept in [configPath]. */
     fun toArgs(configPath: String): List<String> = buildList {
         add("--bind"); add("127.0.0.1:$port")
         add("--config"); add(configPath)
         add("--log-level"); add("info")
-        addAll(transport.flags)
+        // a junk profile picked by hand replaces the transport's own (Amnezia's «aggressive» too)
+        val flags = transport.flags.toMutableList()
+        noize.value?.let { v ->
+            val i = flags.indexOf("--noize")
+            if (i >= 0) flags[i + 1] = v else { flags += "--noize"; flags += v }
+        }
+        addAll(flags)
         add("--scan"); add(if (iran) Scan.THOROUGH.value else scan.value)
         add("--ip"); add(ip.value)
-        if (fragment || iran) add("--fragment")
-        if (iran) { add("--fragment-size"); add("40"); add("--fragment-delay"); add("10") }
+        if (fragment || iran) {
+            add("--fragment")
+            // Iran mode cuts in 40-byte pieces unless another size was picked by hand
+            val f = if (iran && frag == Frag.STANDARD) Frag.IRAN else frag
+            if (f != Frag.STANDARD) { add("--fragment-size"); add(f.size); add("--fragment-delay"); add(f.delay) }
+        }
+        sni.value?.let { add("--masque-sni"); add(it) }
+        if (ech) { add("--ech"); add("auto") }
+        if (!quicV2) add("--no-quic-v2")
         // Reuse the gateway that worked last time without rescanning, when it still answers; with a
         // pinned gateway nothing else is tried: the core goes to that one only and never scans.
         add(if (pins[transport] != null && pinnable) "--no-quick-reconnect" else "--quick-reconnect")
@@ -110,6 +158,8 @@ data class Options(
         .put("dns", dns.name)
         .put("psiphonRegion", psiphonRegion)
         .put("gameTransport", gameTransport.name)
+        .put("frag", frag.name).put("noize", noize.name).put("sni", sni.name).put("ech", ech).put("quicV2", quicV2)
+        .put("gameJunk", gameJunk.name).put("gameMtu", gameMtu)
         .toString()
 
     companion object {
@@ -136,6 +186,13 @@ data class Options(
                     psiphonRegion = j.optString("psiphonRegion", ""),
                     gameTransport = Transport.of(j.optString("gameTransport"))
                         ?.takeIf { it == Transport.AMNEZIA || it == Transport.WIREGUARD } ?: Transport.AMNEZIA,
+                    frag = Frag.entries.firstOrNull { it.name == j.optString("frag") } ?: Frag.STANDARD,
+                    noize = Noize.entries.firstOrNull { it.name == j.optString("noize") } ?: Noize.AUTO,
+                    sni = Sni.entries.firstOrNull { it.name == j.optString("sni") } ?: Sni.CLOUDFLARE,
+                    ech = j.optBoolean("ech", false),
+                    quicV2 = j.optBoolean("quicV2", true),
+                    gameJunk = GameJunk.entries.firstOrNull { it.name == j.optString("gameJunk") } ?: GameJunk.NORMAL,
+                    gameMtu = j.optInt("gameMtu", 1280).takeIf { it in 1200..1500 } ?: 1280,
                 )
             } catch (_: Exception) {
                 Options()

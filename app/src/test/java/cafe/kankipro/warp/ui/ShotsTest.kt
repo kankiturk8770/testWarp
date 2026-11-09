@@ -13,6 +13,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import cafe.kankipro.warp.core.ConnState
 import cafe.kankipro.warp.core.Engine
@@ -146,6 +148,10 @@ class ShotsTest {
     }
 
     @Test fun settings() = shot("5-settings", ConnState(), Tab.SETTINGS)
+
+    @Test fun settingsAntiFilter() = shot("5c-settings-filter", ConnState(), Tab.SETTINGS, Options(fragment = true, frag = cafe.kankipro.warp.core.Frag.TINY)) {
+        rule.onRoot().performTouchInput { swipeUp(startY = bottom * 0.9f, endY = top, durationMillis = 300) }
+    }
 
     @Test fun gamerSettings() = shot("5b-gamer-settings", ConnState(), Tab.SETTINGS, Options(gamer = true))
 

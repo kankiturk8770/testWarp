@@ -122,6 +122,30 @@ object IpTest {
         return out.toList().shuffled(rnd)
     }
 
+    private val V4 = Regex("""(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?(?![\d.])""")
+    private val V6 = Regex("""\[([0-9a-fA-F:]+)]:(\d{1,5})""")
+
+    /**
+     * The «ip:port» in text pasted from a channel (one per line, or mixed with other words), for [kind].
+     * A bare IPv4 is taken only for HTTP/2 (port 443); the other kinds need the port, which is what
+     * differs between networks. Invalid octets or ports are dropped, duplicates once, at most [max].
+     */
+    fun parseList(text: String, kind: Kind, max: Int = 1000): List<String> {
+        val out = LinkedHashSet<String>()
+        for (m in V4.findAll(text)) {
+            val ip = m.groupValues[1]
+            if (ip.split('.').any { it.toInt() > 255 }) continue
+            val port = m.groupValues[2].toIntOrNull() ?: if (kind == Kind.H2) 443 else continue
+            if (port !in 1..65535) continue
+            out += "$ip:$port"
+        }
+        for (m in V6.findAll(text)) {
+            val port = m.groupValues[2].toInt()
+            if (port in 1..65535) out += "[${m.groupValues[1]}]:$port"
+        }
+        return out.take(max)
+    }
+
     /** Usable now: the protocol answered and the last measurement did not lose everything. */
     fun working(list: List<Found>): List<Found> =
         list.filter { it.proto && it.pingMs > 0 && it.lossPct < 100 }.sortedBy { it.pingMs }
@@ -201,7 +225,7 @@ object IpTest {
      * Runs the [kinds] one after another; the WireGuard kinds learn cities with a short connection, so
      * the VPN must be allowed first. [gamingDisguise]: the gamer engine is Amnezia.
      */
-    fun start(ctx: Context, kinds: List<Kind>, gamingDisguise: Boolean) {
+    fun start(ctx: Context, kinds: List<Kind>, gamingDisguise: Boolean, given: List<String>? = null) {
         if (_state.value.running || GameEngine.scan.value.running || kinds.isEmpty()) return
         val net = GameEngine.networkKey(ctx)
         _state.value = _state.value.copy(running = true, kind = kinds.first(), step = 1, steps = kinds.size, stage = 1,
@@ -212,7 +236,7 @@ object IpTest {
             for ((i, kind) in kinds.withIndex()) {
                 _state.value = _state.value.copy(kind = kind, step = i + 1, stage = 1, done = 0, total = 0, found = 0)
                 val found = try {
-                    run(ctx, kind, net, gamingDisguise, rnd)
+                    run(ctx, kind, net, gamingDisguise, rnd, given)
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -236,23 +260,26 @@ object IpTest {
         _state.value = _state.value.copy(stage = stage, done = done, total = total, found = found)
     }
 
-    private suspend fun run(ctx: Context, kind: Kind, net: String, gamingDisguise: Boolean, rnd: Random): List<Found> =
-        when (kind) {
-            Kind.GAMING -> wireguard(ctx, kind, net, gamingDisguise, rnd, wide = 700, sample = 200, samples = 6)
-            Kind.AMNEZIA -> wireguard(ctx, kind, net, true, rnd, wide = 500, sample = 150, samples = 4)
-            Kind.WIREGUARD -> wireguard(ctx, kind, net, false, rnd, wide = 500, sample = 150, samples = 4)
-            Kind.H2 -> h2(ctx, net, rnd)
-            Kind.H3 -> h3(ctx, net, rnd)
+    /** [given]: addresses pasted from a channel, tested instead of random ones (in random order all the same). */
+    private suspend fun run(ctx: Context, kind: Kind, net: String, gamingDisguise: Boolean, rnd: Random, given: List<String>?): List<Found> {
+        val list = given?.shuffled(rnd)
+        return when (kind) {
+            Kind.GAMING -> wireguard(ctx, kind, net, gamingDisguise, rnd, list ?: randomTargets(WgScan.PREFIXES, WgScan.PORTS, 700, rnd), sample = 200, samples = 6)
+            Kind.AMNEZIA -> wireguard(ctx, kind, net, true, rnd, list ?: randomTargets(WgScan.PREFIXES, WgScan.PORTS, 500, rnd), sample = 150, samples = 4)
+            Kind.WIREGUARD -> wireguard(ctx, kind, net, false, rnd, list ?: randomTargets(WgScan.PREFIXES, WgScan.PORTS, 500, rnd), sample = 150, samples = 4)
+            Kind.H2 -> h2(ctx, net, rnd, list?.map { it.substringBeforeLast(':') }
+                ?: randomTargets(H2Scan.PREFIXES, listOf(443), 240, rnd).map { it.substringBeforeLast(':') })
+            Kind.H3 -> h3(ctx, net, rnd, list ?: randomTargets(H2Scan.PREFIXES, H3Scan.PORTS, 500, rnd))
         }
+    }
 
     private suspend fun wireguard(
-        ctx: Context, kind: Kind, net: String, disguise: Boolean, rnd: Random, wide: Int, sample: Int, samples: Int,
+        ctx: Context, kind: Kind, net: String, disguise: Boolean, rnd: Random, targets: List<String>, sample: Int, samples: Int,
     ): List<Found> {
         val err = Engine.register(ctx, Transport.WIREGUARD)
         val id = WarpWg.load(ctx) ?: error("اکانت WireGuard ساخته نشد: ${err ?: "?"}")
         val now = System.currentTimeMillis()
         // Stage 1: one handshake per random address, in groups of 50, a random 15–45 ms apart, a random rest between groups.
-        val targets = randomTargets(WgScan.PREFIXES, WgScan.PORTS, wide, rnd)
         val first = HashMap<String, Int>()
         var done = 0
         for (group in targets.chunked(50)) {
@@ -298,9 +325,8 @@ object IpTest {
         return measured + rest + alive
     }
 
-    private suspend fun h2(ctx: Context, net: String, rnd: Random): List<Found> {
+    private suspend fun h2(ctx: Context, net: String, rnd: Random, hosts: List<String>): List<Found> {
         val now = System.currentTimeMillis()
-        val hosts = randomTargets(H2Scan.PREFIXES, listOf(443), 240, rnd).map { it.substringBeforeLast(':') }
         // Stage 1: TLS on 443, at most eight at a time, each after a random pause.
         val gate = Semaphore(8)
         var done = 0
@@ -350,10 +376,9 @@ object IpTest {
         return exact + rest + alive
     }
 
-    private suspend fun h3(ctx: Context, net: String, rnd: Random): List<Found> {
+    private suspend fun h3(ctx: Context, net: String, rnd: Random, targets: List<String>): List<Found> {
         val now = System.currentTimeMillis()
-        // Stage 1: one QUIC packet per random address and port, in groups of 50 with random pauses.
-        val targets = randomTargets(H2Scan.PREFIXES, H3Scan.PORTS, 500, rnd)
+        // Stage 1: one QUIC packet per address and port, in groups of 50 with random pauses.
         val first = HashMap<String, Int>()
         var done = 0
         for (group in targets.chunked(50)) {

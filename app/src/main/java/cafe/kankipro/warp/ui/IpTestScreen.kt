@@ -79,6 +79,7 @@ internal fun IpTestScreen(
     options: Options,
     onOptions: (Options) -> Unit,
     onScan: (List<Kind>) -> Unit,
+    onImport: (Kind, List<String>) -> Unit,
     onConnect: (WgScan.Hit) -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -88,6 +89,7 @@ internal fun IpTestScreen(
     LaunchedEffect(Unit) { IpTest.load(ctx) }
     var page by rememberSaveable { mutableStateOf(if (st.kind != null && st.kind != Kind.GAMING) 1 else 0) }
     var action by remember { mutableStateOf<IpTest.Found?>(null) }
+    var importing by remember { mutableStateOf<Kind?>(null) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -102,8 +104,8 @@ internal fun IpTestScreen(
         Spacer(Modifier.height(12.dp))
         Segments(page) { page = it }
         Spacer(Modifier.height(14.dp))
-        if (page == 0) GamingPage(st, free, onScan) { action = it }
-        else NormalPage(st, free, onScan) { action = it }
+        if (page == 0) GamingPage(st, free, onScan, { importing = Kind.GAMING }) { action = it }
+        else NormalPage(st, free, onScan, { importing = Kind.H2 }) { action = it }
         if (!st.running && st.result != null) {
             Spacer(Modifier.height(10.dp))
             Text(st.result!!, style = T.small.copy(fontSize = 11.sp), color = K.rose)
@@ -113,6 +115,9 @@ internal fun IpTestScreen(
             SmallButton("پاک کردن بایگانی", K.ember, true) { IpTest.clear(ctx) }
         }
         Spacer(Modifier.height(24.dp))
+    }
+    importing?.let { k ->
+        ImportDialog(k, onClose = { importing = null }) { kind, list -> importing = null; onImport(kind, list) }
     }
     action?.let { f ->
         ActionDialog(f, free, onClose = { action = null },
@@ -151,7 +156,7 @@ private fun Segments(page: Int, onPick: (Int) -> Unit) {
 // ---------------------------------------------------------------- gaming
 
 @Composable
-private fun GamingPage(st: IpTest.State, free: Boolean, onScan: (List<Kind>) -> Unit, onTap: (IpTest.Found) -> Unit) {
+private fun GamingPage(st: IpTest.State, free: Boolean, onScan: (List<Kind>) -> Unit, onImport: () -> Unit, onTap: (IpTest.Found) -> Unit) {
     val list = st.of(Kind.GAMING)
     val golden = IpTest.golden(list)
     val working = IpTest.working(list)
@@ -159,6 +164,8 @@ private fun GamingPage(st: IpTest.State, free: Boolean, onScan: (List<Kind>) -> 
         title = "اسکن گیمینگ", sub = "بازه‌های WireGuard · دست‌دادن واقعی · شهر هر دروازه",
         color = K.amber, icon = Ic.gamepad, st = st, mine = { it == Kind.GAMING }, enabled = free,
     ) { onScan(listOf(Kind.GAMING)) }
+    Spacer(Modifier.height(8.dp))
+    ImportButton(K.amber, free && !st.running, onImport)
     Spacer(Modifier.height(18.dp))
 
     // the golden list: a sideways row; the arrow opens all of it
@@ -219,7 +226,7 @@ private fun GoldCard(f: IpTest.Found, modifier: Modifier, onClick: () -> Unit) {
 // ---------------------------------------------------------------- normal
 
 @Composable
-private fun NormalPage(st: IpTest.State, free: Boolean, onScan: (List<Kind>) -> Unit, onTap: (IpTest.Found) -> Unit) {
+private fun NormalPage(st: IpTest.State, free: Boolean, onScan: (List<Kind>) -> Unit, onImport: () -> Unit, onTap: (IpTest.Found) -> Unit) {
     var picked by rememberSaveable { mutableStateOf(Kind.NORMAL.map { it.name }) }
     val kinds = Kind.NORMAL.filter { it.name in picked }
     Text("برای کدام پروتکل‌ها؟", style = T.small, color = K.rose)
@@ -255,6 +262,8 @@ private fun NormalPage(st: IpTest.State, free: Boolean, onScan: (List<Kind>) -> 
         title = "اسکن کاربر عادی", sub = if (kinds.isEmpty()) "اول یک پروتکل را تیک بزن" else kinds.joinToString(" · ") { it.title },
         color = K.gold, icon = Ic.radar, st = st, mine = { it != Kind.GAMING }, enabled = free && kinds.isNotEmpty(),
     ) { onScan(kinds) }
+    Spacer(Modifier.height(8.dp))
+    ImportButton(K.gold, free && !st.running, onImport)
     Spacer(Modifier.height(14.dp))
     Kind.NORMAL.forEach { k ->
         ProtocolResults(k, st.of(k), onTap)
@@ -321,7 +330,7 @@ private fun CountryBrowser(list: List<IpTest.Found>, accent: Color, onTap: (IpTe
 }
 
 @Composable
-private fun Chip(text: String, n: Int, on: Boolean, accent: Color, onClick: () -> Unit) {
+private fun Chip(text: String, n: Int, on: Boolean, accent: Color, showCount: Boolean = true, onClick: () -> Unit) {
     Row(
         Modifier.clip(RoundedCornerShape(18.dp)).background(if (on) accent else K.wine)
             .border(1.dp, if (on) accent else K.wineLine, RoundedCornerShape(18.dp))
@@ -329,8 +338,10 @@ private fun Chip(text: String, n: Int, on: Boolean, accent: Color, onClick: () -
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text, style = T.small.copy(fontSize = 12.sp), color = if (on) K.night else K.champagne, maxLines = 1)
-        Spacer(Modifier.width(6.dp))
-        Text(fa(n), style = T.small.copy(fontSize = 11.sp), color = if (on) K.night.copy(alpha = 0.7f) else K.rose)
+        if (showCount) {
+            Spacer(Modifier.width(6.dp))
+            Text(fa(n), style = T.small.copy(fontSize = 11.sp), color = if (on) K.night.copy(alpha = 0.7f) else K.rose)
+        }
     }
 }
 
@@ -518,4 +529,107 @@ private fun WideButton(text: String, icon: ImageVector, color: Color, enabled: B
         Spacer(Modifier.width(10.dp))
         Text(text, style = T.strong.copy(fontSize = 13.sp), color = if (enabled) K.champagne else K.rose)
     }
+}
+
+/** «آی‌پی از کانال»: a paper plane landing in a tray, on a glowing badge. */
+@Composable
+private fun ImportButton(color: Color, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(Brush.horizontalGradient(listOf(K.wine, color.copy(alpha = 0.10f))))
+            .border(1.dp, if (enabled) color.copy(alpha = 0.5f) else K.wineLine, RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChannelBadge(color, 40)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("آی‌پی از کانال", style = T.strong.copy(fontSize = 14.sp), color = if (enabled) K.champagne else K.rose)
+            Text("آی‌پی:پورت‌هایی که کانال‌ها می‌گذارند را بچسبان؛ همین‌جا تست و جدا ذخیره می‌شوند",
+                style = T.small.copy(fontSize = 10.sp), color = K.rose, maxLines = 2)
+        }
+        Icon(Ic.edit, null, tint = if (enabled) color else K.wineLine, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun ChannelBadge(color: Color, size: Int) {
+    Box(
+        Modifier.size(size.dp).clip(CircleShape)
+            .background(Brush.linearGradient(listOf(Color(0xFF2AABEE), color))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Ic.inbox, null, tint = Color.White.copy(alpha = 0.35f), modifier = Modifier.size((size * 0.62f).dp))
+        Icon(Ic.plane, null, tint = Color.White, modifier = Modifier.size((size * 0.42f).dp).rotate(-28f))
+    }
+}
+
+/**
+ * Paste what a channel posted: every «ip:port» in it is taken (other words are skipped), for one scan
+ * at a time, so the lists never mix. Then the same stages as a scan test them.
+ */
+@Composable
+internal fun ImportDialog(start: Kind, onClose: () -> Unit, onGo: (Kind, List<String>) -> Unit) {
+    val ctx = LocalContext.current
+    var kind by remember { mutableStateOf(start) }
+    var text by remember { mutableStateOf("") }
+    val found = remember(text, kind) { IpTest.parseList(text, kind) }
+    val kinds = if (start == Kind.GAMING) listOf(Kind.GAMING) else Kind.NORMAL
+    val accent = if (start == Kind.GAMING) K.amber else K.gold
+    AlertDialog(
+        onDismissRequest = onClose,
+        containerColor = K.wine,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ChannelBadge(accent, 34)
+                Spacer(Modifier.width(10.dp))
+                Text("آی‌پی از کانال", style = T.strong, color = K.champagne)
+            }
+        },
+        text = {
+            Column {
+                if (kinds.size > 1) {
+                    Text("این آی‌پی‌ها برای کدام است؟", style = T.small, color = K.rose)
+                    Spacer(Modifier.height(6.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(kinds) { k -> Chip(k.title, 0, k == kind, accent, showCount = false) { kind = k } }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                } else {
+                    Text("برای گیمینگ (WireGuard / Amnezia)", style = T.small, color = K.rose)
+                    Spacer(Modifier.height(8.dp))
+                }
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
+                ) {
+                    androidx.compose.material3.OutlinedTextField(
+                        text, { text = it }, minLines = 4, maxLines = 8,
+                        placeholder = { Text("162.159.192.7:2408\n188.114.97.3:1002\n…", color = K.rose.copy(alpha = 0.6f)) },
+                        textStyle = T.small.copy(textDirection = TextDirection.Ltr, color = K.champagne),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = accent, unfocusedBorderColor = K.wineLine, cursorColor = accent),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (found.isEmpty()) (if (kind == Kind.H2) "آی‌پی یا آی‌پی:پورت بچسبان" else "آی‌پی:پورت بچسبان (پورت لازم است)")
+                        else "${fa(found.size)} آی‌پی:پورت پیدا شد",
+                        style = T.small.copy(fontSize = 11.sp), color = if (found.isEmpty()) K.rose else K.ok, modifier = Modifier.weight(1f),
+                    )
+                    SmallButton("چسباندن", accent, true) {
+                        val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()?.let { text = if (text.isBlank()) it else text + "\n" + it }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton({ onGo(kind, found) }, enabled = found.isNotEmpty()) {
+                Text("تست و ذخیره", style = T.strong, color = if (found.isNotEmpty()) accent else K.rose)
+            }
+        },
+        dismissButton = { TextButton(onClose) { Text("بستن", style = T.strong, color = K.champagne) } },
+    )
 }

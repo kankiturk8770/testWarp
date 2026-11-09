@@ -81,6 +81,10 @@ import androidx.compose.ui.unit.sp
 import cafe.kankipro.warp.core.Colos
 import cafe.kankipro.warp.core.ConnState
 import cafe.kankipro.warp.core.Dns
+import cafe.kankipro.warp.core.Frag
+import cafe.kankipro.warp.core.GameJunk
+import cafe.kankipro.warp.core.Noize
+import cafe.kankipro.warp.core.Sni
 import cafe.kankipro.warp.core.Engine
 import cafe.kankipro.warp.core.GameEngine
 import cafe.kankipro.warp.core.IpFamily
@@ -105,6 +109,7 @@ fun App(
     onGameScan: (Boolean) -> Unit = {},
     onIpScan: (List<IpTest.Kind>) -> Unit = {},
     onGameConnect: (WgScan.Hit) -> Unit = {},
+    onIpImport: (IpTest.Kind, List<String>) -> Unit = { _, _ -> },
 ) {
     var tab by remember { mutableStateOf(initialTab) }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -112,7 +117,7 @@ fun App(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
                     Tab.HOME -> Home(options, onOptions, onToggle, onGameScan)
-                    Tab.IPTEST -> IpTestScreen(options, onOptions, onIpScan) { onGameConnect(it); tab = Tab.HOME }
+                    Tab.IPTEST -> IpTestScreen(options, onOptions, onIpScan, onIpImport) { onGameConnect(it); tab = Tab.HOME }
                     Tab.SETTINGS -> Settings(options, onOptions, onForget)
                     Tab.LOG -> LogScreen(options)
                 }
@@ -170,7 +175,7 @@ private fun Home(options: Options, onOptions: (Options) -> Unit, onToggle: () ->
                 )
             }
             Spacer(Modifier.weight(1f))
-            if (!gamer) IranChip(options.iran, free) { onOptions(options.copy(iran = it)) }
+            if (!gamer && options.iran) Badge("حالت ایران", K.ok)
         }
         ModeSwitch(options.gamer, free) { onOptions(options.copy(gamer = it)) }
         Spacer(Modifier.height(18.dp))
@@ -195,53 +200,6 @@ private fun Home(options: Options, onOptions: (Options) -> Unit, onToggle: () ->
         }
         Spacer(Modifier.height(20.dp))
     }
-}
-
-/** A small «ایران» checkbox; its arrow opens one paragraph that closes itself after five seconds. */
-@Composable
-private fun IranChip(on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    var info by remember { mutableStateOf(false) }
-    LaunchedEffect(info) { if (info) { delay(5000); info = false } }
-    Column(horizontalAlignment = Alignment.End) {
-        Row(
-            Modifier.clip(RoundedCornerShape(18.dp)).background(if (on) K.ok.copy(alpha = 0.12f) else K.wine)
-                .border(1.dp, if (on) K.ok else K.wineLine, RoundedCornerShape(18.dp)),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                Modifier.clickable(enabled = enabled) { onChange(!on) }.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(if (on) K.ok else Color.Transparent)
-                        .border(1.5.dp, if (on) K.ok else K.rose, RoundedCornerShape(4.dp)),
-                    contentAlignment = Alignment.Center,
-                ) { if (on) Icon(Ic.check, null, tint = K.night, modifier = Modifier.size(12.dp)) }
-                Spacer(Modifier.width(6.dp))
-                Text("ایران", style = T.small, color = if (on) K.ok else K.champagne)
-            }
-            Box(
-                Modifier.clickable { info = !info }.padding(start = 2.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Ic.info, "توضیح", tint = K.rose, modifier = Modifier.size(16.dp)) }
-        }
-    }
-    if (info) {
-        AlertLikeTip(
-            "حالت ایران: اول MASQUE · HTTP/2 روی پورت ۴۴۳ که شبیه یک سایت معمولی است، با دست‌دادن تکه‌تکه و اسکن کامل دروازه؛ " +
-                "اگر نشد Amnezia، بعد Gool و آخر Psiphon (بدون کلادفلر). اتصال اول کندتر است."
-        ) { info = false }
-    }
-}
-
-@Composable
-private fun AlertLikeTip(text: String, onClose: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onClose,
-        containerColor = K.wine,
-        text = { Text(text, style = T.body, color = K.champagne) },
-        confirmButton = { TextButton(onClose) { Text("باشه", style = T.strong, color = K.gold) } },
-    )
 }
 
 /** «عادی» or «گیمر»: one capsule, the pill slides to the chosen side. */
@@ -707,17 +665,60 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("تنظیمات", style = T.title, color = K.champagne)
         if (locked) Text("برای تغییر، اول قطع کن", style = T.small, color = K.warn)
-        Spacer(Modifier.height(16.dp))
-        Section("پیدا کردن گره") { Choice(Scan.entries, options.scan, { it.title }, !locked) { onOptions(options.copy(scan = it)) } }
-        Section("نوع آی‌پی") { Choice(IpFamily.entries, options.ip, { it.title }, !locked) { onOptions(options.copy(ip = it)) } }
-        Section("DNS") { Choice(Dns.entries, options.dns, { it.title }, !locked) { onOptions(options.copy(dns = it)) } }
-        if (!options.gamer) Section("کشور خروج Psiphon") {
-            Choice(PSIPHON_REGIONS, PSIPHON_REGIONS.firstOrNull { it.first == options.psiphonRegion } ?: PSIPHON_REGIONS[0],
-                { it.second }, !locked) { onOptions(options.copy(psiphonRegion = it.first)) }
+        Spacer(Modifier.height(14.dp))
+        val on = !locked
+
+        Group("همه‌ی حالت‌ها", Ic.globe, K.champagne, null) {
+            Section("DNS") { Choice(Dns.entries, options.dns, { it.title }, on) { onOptions(options.copy(dns = it)) } }
+            Section("نوع آی‌پی") { Choice(IpFamily.entries, options.ip, { it.title }, on) { onOptions(options.copy(ip = it)) } }
         }
-        Toggle("تکه‌تکه کردن دست‌دادن", options.fragment, !locked) { onOptions(options.copy(fragment = it)) }
-        Toggle("پروتکل جایگزین خودکار", options.autoFallback, !locked) { onOptions(options.copy(autoFallback = it)) }
-        if (options.gamer) ZeroTrustCard(locked)
+
+        Group("کاربر عادی", Ic.shield, K.gold, "عادی") {
+            Toggle("حالت ایران", options.iran, on) { onOptions(options.copy(iran = it)) }
+            Hint("اول MASQUE · HTTP/2 روی ۴۴۳ (شبیه یک سایت معمولی) با تکه‌تکه و اسکن کامل؛ نشد Amnezia، Gool و آخر Psiphon. پروتکل را خودش می‌چیند.")
+            Spacer(Modifier.height(10.dp))
+            Toggle("پروتکل جایگزین خودکار", options.autoFallback, on && !options.iran) { onOptions(options.copy(autoFallback = it)) }
+            Hint("اگر پروتکل انتخابی وصل نشد، تا دو پروتکل دیگر خودش امتحان می‌شود.")
+            Spacer(Modifier.height(10.dp))
+            Section("پیدا کردن گره") { Choice(Scan.entries, options.scan, { it.title }, on && !options.iran) { onOptions(options.copy(scan = it)) } }
+            Section("کشور خروج Psiphon") {
+                Choice(PSIPHON_REGIONS, PSIPHON_REGIONS.firstOrNull { it.first == options.psiphonRegion } ?: PSIPHON_REGIONS[0],
+                    { it.second }, on) { onOptions(options.copy(psiphonRegion = it.first)) }
+            }
+        }
+
+        Group("ضد فیلترینگ شدید", Ic.lock, K.ember, "عادی") {
+            Hint("این‌ها روی هسته‌ی کاربر عادی کار می‌کنند. بازی از این راه نمی‌رود: گیمر پوشش Amnezia خودش را دارد (پایین‌تر).")
+            Spacer(Modifier.height(8.dp))
+            Toggle("تکه‌تکه کردن دست‌دادن (Fragment)", options.fragment || options.iran, on && !options.iran) { onOptions(options.copy(fragment = it)) }
+            if (options.fragment || options.iran) {
+                Section("اندازه‌ی تکه‌ها") { Choice(Frag.entries, options.frag, { it.title }, on) { onOptions(options.copy(frag = it)) } }
+                val f = if (options.iran && options.frag == Frag.STANDARD) Frag.IRAN else options.frag
+                Hint("هر تکه ${ltr(f.size)} بایت، با فاصله‌ی ${ltr(f.delay)} میلی‌ثانیه. «ریز» برای فیلترهای سخت‌گیر (کندتر)، «ایران» همان ۴۰/۱۰، «درشت» برای وقتی تکه‌ی ریز رد نمی‌شود.")
+                Spacer(Modifier.height(12.dp))
+            }
+            Section("بسته‌های آشغال قبل از دست‌دادن (Noize)") {
+                Choice(Noize.entries, options.noize, { it.title }, on) { onOptions(options.copy(noize = it)) }
+            }
+            Hint("خودکار: Amnezia قوی، MASQUE فایروال، WireGuard متعادل. اگر وصل نمی‌شد «قوی» را بزن.")
+            Spacer(Modifier.height(12.dp))
+            Section("نام سرور در دست‌دادن MASQUE (SNI)") { Choice(Sni.entries, options.sni, { it.title }, on) { onOptions(options.copy(sni = it)) } }
+            Toggle("پنهان کردن نام سرور (ECH)", options.ech, on) { onOptions(options.copy(ech = it)) }
+            Hint("نام سرور رمز می‌شود. بعضی شبکه‌ها خود ECH را می‌بندند؛ اگر وصل نشد خاموشش کن.")
+            Spacer(Modifier.height(10.dp))
+            Toggle("QUIC v2 برای HTTP/3", options.quicV2, on) { onOptions(options.copy(quicV2 = it)) }
+            Hint("جایی که QUIC معمولی بسته است، نسخه‌ی ۲ گاهی رد می‌شود.")
+        }
+
+        Group("گیمر", Ic.gamepad, K.amber, "گیمر") {
+            Section("پوشش Amnezia (بسته‌ی آشغال)") { Choice(GameJunk.entries, options.gameJunk, { it.title }, on) { onOptions(options.copy(gameJunk = it)) } }
+            Hint("فقط موقع دست‌دادن (هر دو دقیقه) می‌رود، روی پینگ بازی اثری ندارد. سنگین برای فیلتر سخت‌تر.")
+            Spacer(Modifier.height(12.dp))
+            Section("MTU") { Choice(GAME_MTUS, options.gameMtu.takeIf { it in GAME_MTUS } ?: 1280, { fa(it) }, on) { onOptions(options.copy(gameMtu = it)) } }
+            Hint("۱۲۸۰ امن‌ترین. اگر بازی یا سایتی گیر می‌کرد پایین بماند؛ بالاتر کمی سریع‌تر.")
+            Spacer(Modifier.height(12.dp))
+            ZeroTrustCard(locked)
+        }
         Spacer(Modifier.height(8.dp))
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(K.wine)
@@ -752,6 +753,31 @@ private fun Settings(options: Options, onOptions: (Options) -> Unit, onForget: (
     }
 }
 
+private val GAME_MTUS = listOf(1280, 1360, 1420)
+
+/** A settings group: a card with an icon, a title, and which mode it is for. */
+@Composable
+private fun Group(title: String, icon: ImageVector, color: Color, tag: String?, content: @Composable () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(18.dp)).background(K.wine.copy(alpha = 0.55f))
+            .border(1.dp, K.wineLine, RoundedCornerShape(18.dp)).padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(32.dp).clip(CircleShape).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(title, style = T.strong, color = K.champagne, modifier = Modifier.weight(1f))
+            if (tag != null) Badge(tag, color)
+        }
+        Spacer(Modifier.height(12.dp))
+        content()
+    }
+}
+
+@Composable
+private fun Hint(text: String) = Text(text, style = T.small.copy(fontSize = 11.sp), color = K.rose.copy(alpha = 0.85f))
+
 private val PSIPHON_REGIONS = listOf("" to "خودکار", "DE" to "آلمان", "TR" to "ترکیه", "NL" to "هلند", "FR" to "فرانسه")
 
 @Composable
@@ -767,7 +793,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     Text(title, style = T.small, color = K.rose)
     Spacer(Modifier.height(6.dp))
     content()
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(6.dp))
 }
 
 /** A capsule of equal segments; the chosen one is filled. */

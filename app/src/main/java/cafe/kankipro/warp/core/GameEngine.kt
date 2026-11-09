@@ -268,7 +268,9 @@ object GameEngine {
                             else -> "دروازه‌ی قبلی رد شد؛ امتحان $ep…"
                         }) }
                     // Zero Trust's gateway answers only plain WireGuard handshakes (checked on a phone), so no Amnezia junk there
-                    up(ctx, acct.config(ep, transport == Transport.AMNEZIA && (!acct.team || ztDisguise), dns = Prefs.options(ctx).dns.servers))
+                    Prefs.options(ctx).let { o ->
+                        up(ctx, acct.config(ep, transport == Transport.AMNEZIA && (!acct.team || ztDisguise), mtu = o.gameMtu, dns = o.dns.servers, junk = o.gameJunk))
+                    }
                     Engine.update { it.copy(proven = 2, message = "دست دادن با کلادفلر…") }
                     // Gateway proven = data came back from it; internet proven = a real request answered.
                     val deadline = SystemClock.elapsedRealtime() + 9_000

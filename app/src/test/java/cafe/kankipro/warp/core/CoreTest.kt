@@ -252,4 +252,41 @@ class CoreTest {
         assertEquals(m, m.map { IpTest.parse(IpTest.line(it))!! })
         assertNull(IpTest.parse("garbage"))
     }
+
+    @Test fun channelPasteIsReadPerScanKind() {
+        val post = """
+            🔥 WARP IPs today 🔥
+            162.159.192.7:2408
+            188.114.97.3:1002 ✅ 85ms
+            ip: 162.159.198.2  port: 443
+            999.1.1.1:2408  8.8.8.8:70000
+            [2606:4700:d0::a29f:c001]:2408
+            162.159.192.7:2408
+        """.trimIndent()
+        assertEquals(listOf("162.159.192.7:2408", "188.114.97.3:1002", "[2606:4700:d0::a29f:c001]:2408"),
+            IpTest.parseList(post, IpTest.Kind.GAMING))
+        // HTTP/2 takes a bare address on 443
+        assertTrue("162.159.198.2:443" in IpTest.parseList(post, IpTest.Kind.H2))
+    }
+
+    @Test fun antiFilterSettingsReachTheCore() {
+        val a = Options(transport = Transport.MASQUE_H2, frag = Frag.TINY, noize = Noize.GFW, sni = Sni.WARP, ech = true, quicV2 = false)
+            .toArgs("/x")
+        assertEquals("1-5", a[a.indexOf("--fragment-size") + 1])
+        assertEquals("gfw", a[a.indexOf("--noize") + 1])
+        assertEquals("consumer-masque.cloudflareclient.com", a[a.indexOf("--masque-sni") + 1])
+        assertEquals("auto", a[a.indexOf("--ech") + 1])
+        assertTrue("--no-quic-v2" in a)
+        // a picked profile replaces Amnezia's own, once
+        val am = Options(transport = Transport.AMNEZIA, noize = Noize.LIGHT).toArgs("/x")
+        assertEquals(1, am.count { it == "--noize" })
+        assertEquals("light", am[am.indexOf("--noize") + 1])
+        // defaults add nothing new; Iran mode cuts in 40-byte pieces
+        val d = Options(transport = Transport.MASQUE_H2).toArgs("/x")
+        assertTrue("--fragment-size" !in d && "--masque-sni" !in d && "--ech" !in d && "--no-quic-v2" !in d)
+        val ir = Options(iran = true).toArgs("/x")
+        assertEquals("40", ir[ir.indexOf("--fragment-size") + 1])
+        val o = Options(frag = Frag.LARGE, noize = Noize.OFF, gameJunk = GameJunk.HEAVY, gameMtu = 1420, ech = true)
+        assertEquals(o, Options.fromJson(o.toJson()))
+    }
 }

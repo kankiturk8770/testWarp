@@ -49,7 +49,10 @@ data class WarpWg(
      * An AmneziaWG config for [endpoint]. [disguise] adds the Amnezia junk packets Cloudflare's plain
      * server drops unread; the size fields S1..S4 stay 0, those a plain server cannot read.
      */
-    fun config(endpoint: String, disguise: Boolean, mtu: Int = 1280, dns: List<String> = listOf("1.1.1.1", "1.0.0.1")): String = buildString {
+    fun config(
+        endpoint: String, disguise: Boolean, mtu: Int = 1280, dns: List<String> = listOf("1.1.1.1", "1.0.0.1"),
+        junk: GameJunk = GameJunk.NORMAL,
+    ): String = buildString {
         appendLine("[Interface]")
         appendLine("PrivateKey = $privateKey")
         appendLine("Address = " + listOfNotNull(ipv4.takeIf { it.isNotBlank() }?.let { slash(it, 32) },
@@ -63,9 +66,9 @@ data class WarpWg(
             // single number; ranges like «40-64» or <c> are refused there. They go once per handshake
             // (about every two minutes), never with game packets, so they cost no ping.
             for ((n, spec) in SIGNATURES.withIndex()) appendLine("I${n + 1} = $spec")
-            appendLine("Jc = 4")
-            appendLine("Jmin = 40")
-            appendLine("Jmax = 70")
+            appendLine("Jc = ${junk.jc}")
+            appendLine("Jmin = ${junk.jmin}")
+            appendLine("Jmax = ${junk.jmax}")
             // Once any Amnezia key is set, the engine's config reader (wgtunnel/wireproxy-awg,
             // CreateIPCRequest) sends h1..h4 to the Go side whether given or not, empty when not, and
             // amneziawg-go cannot parse an empty header: the whole config was refused
