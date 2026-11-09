@@ -112,6 +112,8 @@ object WgScan {
         disguise: Boolean,
         endpoints: List<String>,
         waitMs: Long,
+        /** Time before the next handshake; the IP test gives a random one so the sends have no fixed rhythm. */
+        gapMs: () -> Long = { GAP_MS },
         onEach: (Int, Boolean) -> Unit = { _, _ -> },
     ): Map<String, Int> {
         class Out(val ep: String, val hello: WgHello, val sent: WgHello.Sent, val t0: Long)
@@ -159,7 +161,7 @@ object WgScan {
                     }
                     done++
                     onEach(done, false)
-                    delay(GAP_MS)
+                    delay(gapMs())
                 }
                 val until = System.currentTimeMillis() + waitMs
                 var seen = 0

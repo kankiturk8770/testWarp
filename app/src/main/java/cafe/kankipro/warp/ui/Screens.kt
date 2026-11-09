@@ -82,6 +82,7 @@ import cafe.kankipro.warp.core.Dns
 import cafe.kankipro.warp.core.Engine
 import cafe.kankipro.warp.core.GameEngine
 import cafe.kankipro.warp.core.IpFamily
+import cafe.kankipro.warp.core.IpTest
 import cafe.kankipro.warp.core.Options
 import cafe.kankipro.warp.core.Phase
 import cafe.kankipro.warp.core.PinScan
@@ -91,7 +92,7 @@ import cafe.kankipro.warp.core.Transport
 import cafe.kankipro.warp.core.WgScan
 import kotlinx.coroutines.delay
 
-enum class Tab(val title: String) { HOME("اتصال"), SETTINGS("تنظیمات"), LOG("گزارش") }
+enum class Tab(val title: String) { HOME("اتصال"), IPTEST("تست آی‌پی"), SETTINGS("تنظیمات"), LOG("گزارش") }
 
 @Composable
 fun App(
@@ -101,6 +102,8 @@ fun App(
     onForget: () -> Unit,
     initialTab: Tab = Tab.HOME,
     onGameScan: (Boolean) -> Unit = {},
+    onIpScan: (IpTest.Kind) -> Unit = {},
+    onGameConnect: (WgScan.Hit) -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(initialTab) }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -108,6 +111,7 @@ fun App(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
                     Tab.HOME -> Home(options, onOptions, onToggle, onGameScan)
+                    Tab.IPTEST -> IpTestScreen(options, onOptions, onIpScan) { onGameConnect(it); tab = Tab.HOME }
                     Tab.SETTINGS -> Settings(options, onOptions, onForget)
                     Tab.LOG -> LogScreen(options)
                 }
@@ -123,14 +127,14 @@ private fun NavBar(tab: Tab, gamer: Boolean, onTab: (Tab) -> Unit) {
     Column {
         Box(Modifier.fillMaxWidth().height(1.dp).background(K.wineLine))
         Row(
-            Modifier.fillMaxWidth().background(K.night).padding(horizontal = 24.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().background(K.night).padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
         ) {
             Tab.entries.forEach { t ->
                 val on = t == tab
                 Column(
                     Modifier.clip(RoundedCornerShape(10.dp)).clickable { onTab(t) }
-                        .heightIn(min = 40.dp).padding(horizontal = 18.dp, vertical = 4.dp),
+                        .heightIn(min = 40.dp).padding(horizontal = 10.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(t.title, style = T.small.copy(fontSize = 13.sp), color = if (on) accent else K.rose)
@@ -409,13 +413,13 @@ private fun Copyable(modifier: Modifier, label: String, value: String?, ctx: Con
     }
 }
 
-private fun copy(ctx: Context, text: String) {
+internal fun copy(ctx: Context, text: String) {
     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("kanki-warp", text))
     Toast.makeText(ctx, "کپی شد", Toast.LENGTH_SHORT).show()
 }
 
-private fun pingColor(ms: Int?) = when {
+internal fun pingColor(ms: Int?) = when {
     ms == null -> K.champagne
     ms < 100 -> K.ok
     ms <= 180 -> K.warn
@@ -497,7 +501,7 @@ private fun ProtocolGrid(options: Options, enabled: Boolean, onOptions: (Options
     }
 }
 
-private fun percent(done: Int, total: Int) = if (total <= 0) "۰٪" else fa((done * 100 / total).coerceIn(0, 100)) + "٪"
+internal fun percent(done: Int, total: Int) = if (total <= 0) "۰٪" else fa((done * 100 / total).coerceIn(0, 100)) + "٪"
 
 /** The scan key: a radar that turns when a scan runs (tap again to stop). */
 @Composable

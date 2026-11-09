@@ -101,6 +101,23 @@ class ShotsTest {
         shot("7-gamer", ConnState(), options = Options(gamer = true))
     }
 
+    @Test fun ipTest() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val net = cafe.kankipro.warp.core.GameEngine.networkKey(ctx)
+        val g = cafe.kankipro.warp.core.IpTest.Kind.GAMING
+        val n = cafe.kankipro.warp.core.IpTest.Kind.NORMAL
+        fun f(ep: String, k: cafe.kankipro.warp.core.IpTest.Kind, ping: Int, j: Int, loss: Int, colo: String, proto: Boolean = true) =
+            cafe.kankipro.warp.core.IpTest.Found(ep, k, proto, !proto || k == n, ping, j, loss, colo, net, 1)
+        cafe.kankipro.warp.core.IpTest.save(ctx, listOf(
+            f("162.159.193.10:2408", g, 74, 3, 0, "IST"), f("188.114.97.3:4500", g, 81, 4, 0, "FRA"),
+            f("162.159.192.7:1002", g, 66, 9, 16, "IST"), f("188.114.99.4:8854", g, 92, 5, 0, "MXP"),
+            f("162.159.195.40:1701", g, 140, 12, 0, "DUS"), f("162.159.198.2:500", g, 176, 7, 0, "VIE"),
+            f("162.159.204.9:443", g, 0, 0, 0, "", proto = false),
+            f("162.159.198.12:443", n, 96, 6, 0, ""), f("162.159.199.77:443", n, 131, 14, 25, ""),
+        ))
+        shot("8-iptest", ConnState(), Tab.IPTEST)
+    }
+
     @Test fun settings() = shot("5-settings", ConnState(), Tab.SETTINGS)
 
     @Test fun gamerSettings() = shot("5b-gamer-settings", ConnState(), Tab.SETTINGS, Options(gamer = true))

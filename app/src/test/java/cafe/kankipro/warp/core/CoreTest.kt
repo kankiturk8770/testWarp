@@ -192,4 +192,40 @@ class CoreTest {
         assertTrue(WarpWg.parse(toml)!!.ownGateways().isEmpty())
         assertTrue(443 in WgScan.PORTS && 8443 in WgScan.PORTS)
     }
+
+    @Test fun ipTestTargetsAreRandomInTheRangesAndDistinct() {
+        val a = IpTest.randomTargets(WgScan.PREFIXES, WgScan.PORTS, 300, kotlin.random.Random(1))
+        val b = IpTest.randomTargets(WgScan.PREFIXES, WgScan.PORTS, 300, kotlin.random.Random(2))
+        assertEquals(300, a.size)
+        assertEquals(a.size, a.toSet().size)
+        assertTrue(a.all { ep -> ep.substringBeforeLast(':').substringBeforeLast('.') in WgScan.PREFIXES })
+        assertTrue(a.all { ep -> ep.substringAfterLast(':').toInt() in WgScan.PORTS })
+        assertTrue(a != b && a.toSet() != b.toSet())
+        // not in order: neither sorted nor one range after another
+        assertTrue(a != a.sorted())
+        assertTrue(a.take(20).map { it.substringBeforeLast('.') }.toSet().size > 3)
+    }
+
+    @Test fun ipTestGoldenListAndCountries() {
+        fun f(ep: String, ping: Int, loss: Int, colo: String, proto: Boolean = true) =
+            IpTest.Found(ep, IpTest.Kind.GAMING, proto, tcp = !proto, pingMs = ping, lossPct = loss, colo = colo)
+        val list = listOf(
+            f("a:1", 90, 0, "FRA"), f("b:1", 60, 16, "IST"), f("c:1", 70, 0, "IST"), f("d:1", 190, 0, "DXB"),
+            f("e:1", 250, 0, "FRA"), f("g:1", 0, 0, "", proto = false), f("h:1", 80, 100, ""),
+        )
+        assertEquals(listOf("c:1", "a:1", "d:1"), IpTest.golden(list).map { it.endpoint })
+        val c = IpTest.byCountry(list)
+        assertEquals(listOf("TR", "DE", "AE"), c.map { it.first })
+        assertEquals(listOf("c:1", "b:1"), c[0].second.map { it.endpoint })
+    }
+
+    @Test fun ipTestArchiveKeepsTheNewestOfEachAddress() {
+        val old = IpTest.Found("1.2.3.4:2408", IpTest.Kind.GAMING, true, false, 80, 3, 0, "FRA", "wifi", 10)
+        val new = old.copy(pingMs = 70, seenAt = 20)
+        val other = old.copy(network = "cell:x", seenAt = 5)
+        val m = IpTest.merge(listOf(old, other), listOf(new))
+        assertEquals(listOf(new, other), m)
+        assertEquals(m, m.map { IpTest.parse(IpTest.line(it))!! })
+        assertNull(IpTest.parse("garbage"))
+    }
 }

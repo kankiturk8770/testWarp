@@ -23,6 +23,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import cafe.kankipro.warp.core.Engine
 import cafe.kankipro.warp.core.GameEngine
+import cafe.kankipro.warp.core.IpTest
+import cafe.kankipro.warp.core.Transport
 import cafe.kankipro.warp.core.Phase
 import cafe.kankipro.warp.core.Prefs
 import cafe.kankipro.warp.service.WarpService
@@ -57,6 +59,18 @@ class MainActivity : ComponentActivity() {
                         onToggle = { toggle() },
                         initialTab = if (fromLink) Tab.SETTINGS else Tab.HOME,
                         onGameScan = { fast -> withVpn { GameEngine.startScan(applicationContext, Prefs.options(this@MainActivity).gameTransport, fast) } },
+                        // gaming learns cities with a short connection: the VPN must be allowed first
+                        onIpScan = { kind ->
+                            val disguise = Prefs.options(this@MainActivity).gameTransport == Transport.AMNEZIA
+                            if (kind == IpTest.Kind.GAMING) withVpn { IpTest.start(applicationContext, kind, disguise) }
+                            else IpTest.start(applicationContext, kind, disguise)
+                        },
+                        // a gateway picked on the IP test screen: gamer mode, that gateway first, connect
+                        onGameConnect = { hit ->
+                            if (!options.gamer) { options = options.copy(gamer = true); Prefs.save(this@MainActivity, options) }
+                            GameEngine.pick(applicationContext, hit)
+                            withVpn { GameEngine.connect(applicationContext, options.gameTransport, hit.endpoint) }
+                        },
                         onForget = {
                             lifecycleScope.launch { Engine.remakeAccount(applicationContext, options.transport) }
                         },

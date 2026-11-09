@@ -94,7 +94,8 @@ object GameEngine {
 
     /** The gamer scan for [transport] (Amnezia scans with its disguise): best paths of this network. */
     fun startScan(ctx: Context, transport: Transport, fast: Boolean = false) {
-        if (_scan.value.running) return
+        // one scan at a time: the IP test uses the same engine to learn the cities
+        if (_scan.value.running || IpTest.state.value.running) return
         val net = networkKey(ctx)
         _scan.value = ScanState(running = true, network = net, hits = Prefs.gameHits(ctx, net), fast = fast)
         scope.launch {
@@ -116,7 +117,9 @@ object GameEngine {
             }.getOrElse { emptyList() }
             // Phase 2: the city of each, by connecting for a moment and asking Cloudflare where we came out.
             Engine.note("scan: ${_scan.value.found} gateways answered; ${found.size} kept after the steadiness check")
-            val located = if (found.isEmpty()) emptyList() else locate(ctx, id, disguise, found, if (fast) 4000 else 6000)
+            val located = if (found.isEmpty()) emptyList() else locate(ctx, id, disguise, found, if (fast) 4000 else 6000) { d, t, f ->
+                _scan.value = _scan.value.copy(phase = 2, done = d, total = t, found = f)
+            }
             val hits = (located.ifEmpty { found }).sortedWith(compareBy({ it.country !in setOf("DE", "TR") }, { it.score }))
             if (hits.isNotEmpty()) Prefs.saveGameHits(ctx, net, hits)
             _scan.value = _scan.value.copy(
@@ -131,8 +134,9 @@ object GameEngine {
      * answered, and measures the ping a game would see (DNS round trip through the tunnel). Anycast
      * means only a real connection can tell; the handshake alone cannot.
      */
-    private suspend fun locate(
+    internal suspend fun locate(
         ctx: Context, id: WarpWg, disguise: Boolean, hits: List<WgScan.Hit>, waitMs: Long,
+        onStep: (done: Int, total: Int, found: Int) -> Unit,
     ): List<WgScan.Hit> {
         // Anycast is routed per address range: one gateway of each /24 tells the city of all of it,
         // so only the best of each range is connected to; the rest take its city. Much quicker.
@@ -140,7 +144,7 @@ object GameEngine {
         val heads = hits.groupBy(range).values.map { it.first() }
         val city = HashMap<String, Pair<String, Int>>() // range → (colo, dns ping)
         for ((n, h) in heads.withIndex()) {
-            _scan.value = _scan.value.copy(phase = 2, done = n, total = heads.size, found = city.size)
+            onStep(n, heads.size, city.size)
             try {
                 up(ctx, id.config(h.endpoint, disguise))
                 var e: Probe.Egress? = null
@@ -160,7 +164,7 @@ object GameEngine {
                 runCatching { backend(ctx).setState(tunnel, Tunnel.State.DOWN, null) }
             }
         }
-        _scan.value = _scan.value.copy(done = heads.size, found = city.size)
+        onStep(heads.size, heads.size, city.size)
         return hits.mapNotNull { h ->
             val (colo, ping) = city[range(h)] ?: return@mapNotNull null
             // the one connected to has the real in-tunnel ping; the others keep their handshake ping
